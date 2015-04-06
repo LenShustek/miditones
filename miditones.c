@@ -5,7 +5,7 @@
 *  Convert a MIDI file into a bytestream of notes
 *
 *
-*   (C) Copyright 2011, Len Shustek
+*   (C) Copyright 2011,2013,2015, Len Shustek
 *
 *   This program is free software: you can redistribute it and/or modify
 *   it under the terms of version 3 of the GNU General Public License as
@@ -46,9 +46,13 @@
 *     -Changed to allow compilation and execution in 64-bit environments
 *      by using C99 standard intN_t and uintN_t types for MIDI structures,
 *      and formatting specifications like "PRId32" instead of "ld".
+* 04 April 2015, L. Shustek, V1.7
+*     -Made friendlier to other compilers: import source of strlcpy and strlcat,
+*      fixed various type mismatches that the LCC compiler didn't fret about.
+*      Generate "const" for data initialization for compatibility with Arduino IDE v1.6.x.
 */
 
-#define VERSION "1.6"
+#define VERSION "1.7"
 
 
 /*--------------------------------------------------------------------------------
@@ -353,6 +357,60 @@ void print_command_line (int argc,char *argv[]) {
 
 /****************  utility routines  **********************/
 
+
+/* safe string copy */
+
+size_t strlcpy(char *dst, const char *src,	size_t 	siz) {
+	char       *d = dst;
+	const char *s = src;
+	size_t      n = siz;
+	/* Copy as many bytes as will fit */
+	if (n != 0)
+	{
+		while (--n != 0)
+		{
+			if ((*d++ = *s++) == '\0')
+				break;
+		}
+	}
+	/* Not enough room in dst, add NUL and traverse rest of src */
+	if (n == 0)
+	{
+		if (siz != 0)
+			*d = '\0';          /* NUL-terminate dst */
+		while (*s++)
+			;
+	}
+	return (s - src - 1);       /* count does not include NUL */
+}
+
+/* safe string concatenation */
+
+size_t strlcat(char *dst, const char *src, size_t siz) {
+	char       *d = dst;
+	const char *s = src;
+	size_t      n = siz;
+	size_t      dlen;
+	/* Find the end of dst and adjust bytes left but don't go past end */
+	while (n-- != 0 && *d != '\0')
+		d++;
+	dlen = d - dst;
+	n = siz - dlen;
+	if (n == 0)
+		return (dlen + strlen(s));
+	while (*s != '\0')
+	{
+		if (n != 1)
+		{
+			*d++ = *s;
+			n--;
+		}
+		s++;
+	}
+	*d = '\0';
+	return (dlen + (s - src));  /* count does not include NUL */
+}
+
 /* match a constant character sequence */
 
 int charcmp (char *buf, char *match) {
@@ -378,8 +436,8 @@ void midi_error (char *msg, unsigned char *bufptr) {
 
 /* check that we have a specified number of bytes left in the buffer */
 
-void chk_bufdata(unsigned char *ptr, int len) {
-    if (ptr + len - buffer > buflen) midi_error("data missing", ptr);
+void chk_bufdata(unsigned char *ptr, unsigned long int len) {
+    if ((unsigned)(ptr + len - buffer) > buflen) midi_error("data missing", ptr);
 }
 
 
@@ -483,7 +541,7 @@ void find_note (int tracknum) {
     unsigned long int delta_time;
     int event, chan;
     int i;
-    int note, velocity, parm;
+    int note, velocity;
     int meta_cmd, meta_length;
     unsigned long int sysex_length;
     struct track_status *t;
@@ -630,13 +688,12 @@ int main(int argc,char *argv[]) {
 #define MAXPATH 120
     char filename[MAXPATH];
 
-    int i;
     int tracknum;
     int earliest_tracknum;
     unsigned long earliest_time;
     int notes_skipped = 0;
 
-    printf("MIDITONES V%s, (C) 2011 Len Shustek\n", VERSION);
+    printf("MIDITONES V%s, (C) 2011,2015 Len Shustek\n", VERSION);
     printf("See the source code for license information.\n\n");
     if (argc == 1) { /* no arguments */
         SayUsage(argv[0]);
@@ -704,7 +761,6 @@ int main(int argc,char *argv[]) {
         }
         if (!binaryoutput) {  /* create header of C file that initializes score data */
             time_t rawtime;
-            struct tm *ptime;
             time (&rawtime);
             fprintf(outfile, "// Playtune bytestream for file \"%s.mid\" ", filebasename);
             fprintf(outfile, "created by MIDITONES V%s on %s", VERSION, asctime(localtime(&rawtime)));
@@ -713,7 +769,7 @@ int main(int argc,char *argv[]) {
                 fprintf(outfile, "//   Only the masked channels were processed: %04X\n", channel_mask);
             if (keyshift != 0)
                 fprintf(outfile, "//   Keyshift was %d chromatic notes\n", keyshift);
-            fprintf(outfile, "byte PROGMEM score [] = {\n");
+            fprintf(outfile, "const byte PROGMEM score [] = {\n");
         }
     }
 

@@ -139,3 +139,5 @@ https://drive.google.com/folderview?id=0B1ZOnb_w5lfBQkNPeFpvRHdQNnc
 
 Update on 5 April 2015: Now code.google.org is going away, so I've migrated this to github.
 
+Update on 6 April 2015: I made the source code friendlier to more compilers. The executables are, of course, for Windows.
+

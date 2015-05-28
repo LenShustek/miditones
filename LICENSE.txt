@@ -1,0 +1,14 @@
+*   (C) Copyright 2011, 2013, 2015, Len Shustek
+*
+*   This program is free software: you can redistribute it and/or modify
+*   it under the terms of version 3 of the GNU General Public License as
+*   published by the Free Software Foundation at http://www.gnu.org/licenses,
+*   with Additional Permissions under term 7(b) that the original copyright
+*   notice and author attibution must be preserved and under term 7(c) that
+*   modified versions be marked as different from the original.
+*
+*   This program is distributed in the hope that it will be useful,
+*   but WITHOUT ANY WARRANTY; without even the implied warranty of
+*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*   GNU General Public License for more details.
+*

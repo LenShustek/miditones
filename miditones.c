@@ -50,9 +50,11 @@
 *     -Made friendlier to other compilers: import source of strlcpy and strlcat,
 *      fixed various type mismatches that the LCC compiler didn't fret about.
 *      Generate "const" for data initialization for compatibility with Arduino IDE v1.6.x.
+* 23 January 2016, D. Blackketter, V1.8
+*     -Fix warnings and errors building on Mac OS X via "gcc miditones.c"
 */
 
-#define VERSION "1.7"
+#define VERSION "1.8"
 
 
 /*--------------------------------------------------------------------------------

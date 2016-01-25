@@ -50,9 +50,11 @@
 *     -Made friendlier to other compilers: import source of strlcpy and strlcat,
 *      fixed various type mismatches that the LCC compiler didn't fret about.
 *      Generate "const" for data initialization for compatibility with Arduino IDE v1.6.x.
+* 23 January 2016, D. Blackketter, V1.8
+*     -Fix warnings and errors building on Mac OS X via "gcc miditones.c"
 */
 
-#define VERSION "1.7"
+#define VERSION "1.8"
 
 
 /*--------------------------------------------------------------------------------
@@ -354,13 +356,11 @@ void print_command_line (int argc,char *argv[]) {
 }
 
 
-
 /****************  utility routines  **********************/
 
 
 /* safe string copy */
-
-size_t strlcpy(char *dst, const char *src,	size_t 	siz) {
+size_t miditones_strlcpy(char *dst, const char *src,	size_t 	siz) {
 	char       *d = dst;
 	const char *s = src;
 	size_t      n = siz;
@@ -386,7 +386,7 @@ size_t strlcpy(char *dst, const char *src,	size_t 	siz) {
 
 /* safe string concatenation */
 
-size_t strlcat(char *dst, const char *src, size_t siz) {
+size_t miditones_strlcat(char *dst, const char *src, size_t siz) {
 	char       *d = dst;
 	const char *s = src;
 	size_t      n = siz;
@@ -472,7 +472,7 @@ void process_header (void) {
 
     chk_bufdata(hdrptr, sizeof(struct midi_header));
     hdr = (struct midi_header *) hdrptr;
-    if (!charcmp(hdr->MThd,"MThd")) midi_error("Missing 'MThd'", hdrptr);
+    if (!charcmp((char*)hdr->MThd,"MThd")) midi_error("Missing 'MThd'", hdrptr);
 
     num_tracks = rev_short(hdr->number_of_tracks);
 
@@ -501,7 +501,7 @@ void start_track (int tracknum) {
 
     chk_bufdata(hdrptr, sizeof(struct track_header));
     hdr = (struct track_header *) hdrptr;
-    if (!charcmp(hdr->MTrk,"MTrk")) midi_error("Missing 'MTrk'", hdrptr);
+    if (!charcmp((char*)hdr->MTrk,"MTrk")) midi_error("Missing 'MTrk'", hdrptr);
 
     tracklen = rev_long(hdr->track_size);
     if (logparse) fprintf (logfile, "\nTrack %d length %ld\n", tracknum, tracklen);
@@ -554,7 +554,11 @@ void find_note (int tracknum) {
         delta_time = get_varlen(&t->trkptr);
         if (logparse) {
             fprintf (logfile, "trk %d ", tracknum);
-            fprintf (logfile, delta_time ? "delta time %4ld, " : "                ", delta_time);
+            if (delta_time) {
+              fprintf (logfile, "delta time %4ld, ", delta_time);
+            } else {
+              fprintf (logfile, "                ");
+            }
         }
         t->time += delta_time;
 
@@ -708,8 +712,8 @@ int main(int argc,char *argv[]) {
     /* Open the log file */
 
     if (logparse || loggen) {
-        strlcpy(filename, filebasename, MAXPATH);
-        strlcat(filename, ".log", MAXPATH);
+        miditones_strlcpy(filename, filebasename, MAXPATH);
+        miditones_strlcat(filename, ".log", MAXPATH);
         logfile = fopen(filename, "w");
         if (!logfile) {
             fprintf(stderr, "Unable to open log file %s", filename);
@@ -719,8 +723,8 @@ int main(int argc,char *argv[]) {
 
     /* Open the input file */
 
-    strlcpy(filename, filebasename, MAXPATH);
-    strlcat(filename, ".mid", MAXPATH);
+    miditones_strlcpy(filename, filebasename, MAXPATH);
+    miditones_strlcat(filename, ".mid", MAXPATH);
     infile = fopen(filename, "rb");
     if (!infile) {
         fprintf(stderr, "Unable to open input file %s", filename);
@@ -746,13 +750,13 @@ int main(int argc,char *argv[]) {
     /* Create the output file */
 
     if (!parseonly) {
-        strlcpy(filename, filebasename, MAXPATH);
+        miditones_strlcpy(filename, filebasename, MAXPATH);
         if (binaryoutput) {
-            strlcat(filename, ".bin", MAXPATH);
+            miditones_strlcat(filename, ".bin", MAXPATH);
             outfile = fopen(filename, "wb");
         }
         else {
-            strlcat(filename, ".c", MAXPATH);
+            miditones_strlcat(filename, ".c", MAXPATH);
             outfile = fopen(filename, "w");
         }
         if (!outfile) {

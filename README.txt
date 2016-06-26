@@ -8,9 +8,9 @@
 *  so that a version of the music can be played on a synthesizer having only
 *  tone generators without any volume or tone controls.
 *
-*  Volume ("velocity") and instrument specifications in the MIDI files are discarded.
-*  All the tracks are prcoessed and merged into a single time-ordered stream of
-*  "note on", "note off", and "delay" commands.
+*  Volume ("velocity") and instrument specifications in the MIDI files are generally
+*  discarded.  All the tracks are prcoessed and merged into a single time-ordered
+*  stream of "note on", "note off", and "delay" commands.
 *
 *  This was written for the "Playtune" Arduino library, which plays polyphonic music
 *  using up to 6 tone generators run by the timers on the processor.  See the separate
@@ -45,7 +45,7 @@
 *
 *  The general form for command line execution is this:
 *
-*     miditones [-p] [-lg] [-lp] [-s1] [-tn] [-b] [-cn] [-kn] <basefilename>
+*     miditones [-p] [-lg] [-lp] [-s1] [-tn] [-b] [-cn] [-kn] [-v] <basefilename>
 *
 *  The <basefilename> is the base name, without an extension, for the input and
 *  output files.  It can contain directory path information, or not.
@@ -87,6 +87,8 @@
 *  -kn  Change the musical key of the output by n chromatic notes.
 *       -k-12 goes one octave down, -k12 goes one octave up, etc.
 *
+*  -v   Add velocity information to output
+*
 *
 *  *****  The score bytestream  *****
 *
@@ -96,9 +98,10 @@
 *
 *  If the high-order bit of the byte is 1, then it is one of the following commands:
 *
-*    9t nn  Start playing note nn on tone generator t.  Generators are numbered
+*    9t nn [vv] Start playing note nn on tone generator t.  Generators are numbered
 *           starting with 0.  The notes numbers are the MIDI numbers for the chromatic
 *           scale, with decimal 60 being Middle C, and decimal 69 being Middle A (440 Hz).
+*           If the -v option is enabled, a second byte is added to indicate velocity.
 *
 *    8t     Stop playing the note on tone generator t.
 *
@@ -118,26 +121,7 @@
 *  that were playing before the delay command will continue to play.
 *
 *
-*  Len Shustek, 4 Feb 2011
+*  Len Shustek, 4 Feb 2011 and later
 *
 *----------------------------------------------------------------------------------*/
-
-Update on 28 Feb 2011: I fixed a bug that caused it to stop some notes too soon.
-
-I also wrote a "MIDITONES_SCROLL" program that displays a miditones bytestream as a time-ordered scroll, sort of like a piano roll but with non-uniform time.This is primarily useful to debug programming errors that cause some MIDI scripts to sound strange. It reads the .bin file created from a .mid file by MIDITONES using the -b option.
-
-Update on 25 Apr 2011: Scott Stickeler pointed out that it doesn't work if compiled for a 64-bit environment. I'll put fixing that on my to-do list, but in the meantime the workaround is just to compile for 32 bits. (Thanks, Scott.)
-
-Update on 20 Nov 2011, V1.4: Added options to mask which channels (tracks) to process, and to change key by any chromatic distance. These are in support of music-playing on my Tesla Coil.
-
-Update on 25 Aug 2013, V1.6: I finally fixed it to compile in 64-bit environments. I didn't have a way to test that, so thanks to David Azar for doing so.
-
-Update on 30 Dec 2013: I added version 1.1 of MINITONES_SCROLL with a "-c" option to create annotated C source code initialization of the music bytestream. This makes it easier to manually edit the bytestream. See the beginning of the MINITONES_SCROLL source code for more details.
-
-Update on 7 Mar 2013: I compiled 32-bit versions for people running Windows XP and Vista. Unfortunately code.google.com no longer allows downloaded files! So I put them in a Google Drive folder here:
-https://drive.google.com/folderview?id=0B1ZOnb_w5lfBQkNPeFpvRHdQNnc
-
-Update on 5 April 2015: Now code.google.org is going away, so I've migrated this to github.
-
-Update on 6 April 2015: I made the source code friendlier to more compilers. The executables are, of course, for Windows.
 

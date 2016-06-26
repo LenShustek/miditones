@@ -53,10 +53,13 @@
 * 23 January 2016, D. Blackketter, V1.8
 *     -Fix warnings and errors building on Mac OS X via "gcc miditones.c"
 * 25 January 2016, D. Blackketter, Paul Stoffregen, V1.9
-      -Merge in velocity output option from Arduino/Teensy Audio Library
+*     -Merge in velocity output option from Arduino/Teensy Audio Library
+* 26 June 2016, L. Shustek, V1.10
+*     -Fix overflow problem in calculating long delays. (Thanks go to Tiago Rocha.)
+*      In the process I discover and work around an LCC 32-bit compiler bug.
 */
 
-#define VERSION "1.9"
+#define VERSION "1.10"
 
 
 /*--------------------------------------------------------------------------------
@@ -69,9 +72,9 @@
 *  so that a version of the music can be played on a synthesizer having only
 *  tone generators without any volume or tone controls.
 *
-*  Volume ("velocity") and instrument specifications in the MIDI files are discarded.
-*  All the tracks are prcoessed and merged into a single time-ordered stream of
-*  "note on", "note off", and "delay" commands.
+*  Volume ("velocity") and instrument specifications in the MIDI files are generally
+*  discarded.  All the tracks are prcoessed and merged into a single time-ordered
+*  stream of "note on", "note off", and "delay" commands.
 *
 *  This was written for the "Playtune" Arduino library, which plays polyphonic music
 *  using up to 6 tone generators run by the timers on the processor.  See the separate
@@ -106,7 +109,7 @@
 *
 *  The general form for command line execution is this:
 *
-*     miditones [-p] [-lg] [-lp] [-s1] [-tn] [-b] [-cn] [-kn] <basefilename>
+*     miditones [-p] [-lg] [-lp] [-s1] [-tn] [-b] [-cn] [-kn] [-v] <basefilename>
 *
 *  The <basefilename> is the base name, without an extension, for the input and
 *  output files.  It can contain directory path information, or not.
@@ -162,7 +165,7 @@
 *    9t nn [vv] Start playing note nn on tone generator t.  Generators are numbered
 *           starting with 0.  The notes numbers are the MIDI numbers for the chromatic
 *           scale, with decimal 60 being Middle C, and decimal 69 being Middle A (440 Hz).
-*           if the -v option is enabled, a second byte is added to indicate velocity
+*           If the -v option is enabled, a second byte is added to indicate velocity.
 *
 *    8t     Stop playing the note on tone generator t.
 *
@@ -182,7 +185,7 @@
 *  that were playing before the delay command will continue to play.
 *
 *
-*  Len Shustek, 4 Feb 2011
+*  Len Shustek, 4 Feb 2011 and later
 *
 *----------------------------------------------------------------------------------*/
 
@@ -360,7 +363,7 @@ opterror:
 
 void print_command_line (int argc,char *argv[]) {
     int i;
-	fprintf(outfile, "// command line: ");
+    fprintf(outfile, "// command line: ");
     for (i=0; i< argc; i++) fprintf(outfile,"%s ",argv[i]);
     fprintf(outfile, "\n");
 }
@@ -371,54 +374,54 @@ void print_command_line (int argc,char *argv[]) {
 
 /* safe string copy */
 size_t miditones_strlcpy(char *dst, const char *src,	size_t 	siz) {
-	char       *d = dst;
-	const char *s = src;
-	size_t      n = siz;
-	/* Copy as many bytes as will fit */
-	if (n != 0)
-	{
-		while (--n != 0)
-		{
-			if ((*d++ = *s++) == '\0')
-				break;
-		}
-	}
-	/* Not enough room in dst, add NUL and traverse rest of src */
-	if (n == 0)
-	{
-		if (siz != 0)
-			*d = '\0';          /* NUL-terminate dst */
-		while (*s++)
-			;
-	}
-	return (s - src - 1);       /* count does not include NUL */
+    char       *d = dst;
+    const char *s = src;
+    size_t      n = siz;
+    /* Copy as many bytes as will fit */
+    if (n != 0)
+    {
+        while (--n != 0)
+        {
+            if ((*d++ = *s++) == '\0')
+                break;
+        }
+    }
+    /* Not enough room in dst, add NUL and traverse rest of src */
+    if (n == 0)
+    {
+        if (siz != 0)
+            *d = '\0';          /* NUL-terminate dst */
+        while (*s++)
+            ;
+    }
+    return (s - src - 1);       /* count does not include NUL */
 }
 
 /* safe string concatenation */
 
 size_t miditones_strlcat(char *dst, const char *src, size_t siz) {
-	char       *d = dst;
-	const char *s = src;
-	size_t      n = siz;
-	size_t      dlen;
-	/* Find the end of dst and adjust bytes left but don't go past end */
-	while (n-- != 0 && *d != '\0')
-		d++;
-	dlen = d - dst;
-	n = siz - dlen;
-	if (n == 0)
-		return (dlen + strlen(s));
-	while (*s != '\0')
-	{
-		if (n != 1)
-		{
-			*d++ = *s;
-			n--;
-		}
-		s++;
-	}
-	*d = '\0';
-	return (dlen + (s - src));  /* count does not include NUL */
+    char       *d = dst;
+    const char *s = src;
+    size_t      n = siz;
+    size_t      dlen;
+    /* Find the end of dst and adjust bytes left but don't go past end */
+    while (n-- != 0 && *d != '\0')
+        d++;
+    dlen = d - dst;
+    n = siz - dlen;
+    if (n == 0)
+        return (dlen + strlen(s));
+    while (*s != '\0')
+    {
+        if (n != 1)
+        {
+            *d++ = *s;
+            n--;
+        }
+        s++;
+    }
+    *d = '\0';
+    return (dlen + (s - src));  /* count does not include NUL */
 }
 
 /* match a constant character sequence */
@@ -861,7 +864,9 @@ int main(int argc,char *argv[]) {
         delta_time = earliest_time - timenow;
         if (delta_time) {
             /* Convert ticks to milliseconds based on the current tempo */
-            delta_msec = ((unsigned long) delta_time * tempo) / ticks_per_beat / 1000;
+            unsigned long long temp;
+            temp = ((unsigned long long) delta_time * tempo) / ticks_per_beat;
+            delta_msec = temp / 1000; // get around LCC compiler bug
             if (loggen) fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
             if (delta_msec > 0x7fff) midi_error ("INTERNAL: time delta too big", trk->trkptr);
             /* output a 15-bit delay in big-endian format */

@@ -1006,6 +1006,11 @@ int main (int argc, char *argv[]) {
 /* process options */
 
    argno = HandleOptions (argc, argv);
+   if (argno == 0) {
+      fprintf (stderr, "\n*** No basefilename given\n\n");
+      SayUsage (argv[0]);
+      exit (4);
+   }
    filebasename = argv[argno];
 
 /* Open the log file */

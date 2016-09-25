@@ -494,8 +494,10 @@ does not start with a dash or a slash*/
                goto opterror;
             break;
          case 'P':
-            if (argv[i][2] == '\0')
+            if (argv[i][2] == '\0') {
                parseonly = true;
+               break;
+            }
             else if (toupper (argv[i][2]) == 'I')
                percussion_ignore = true;
             else if (toupper (argv[i][2]) == 'T')
@@ -1119,7 +1121,7 @@ int main (int argc, char *argv[]) {
 This is not unlike multiway merging used for tape sorting algoritms in the 50's! */
 
    tracknum = 0;
-   if (!parseonly)
+   if (!parseonly) {
       do {                      /* while there are still track notes to process */
          struct track_status *trk;
          struct tonegen_status *tg;
@@ -1331,7 +1333,6 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       }                         /* !parseonly do */
       while (tracks_done < num_tracks);
 
-   if (!parseonly) {
       // generate the end-of-score command and some commentary
       if (binaryoutput)
          putc (CMD_STOP, outfile);
@@ -1353,18 +1354,19 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       if (loggen)
          fprintf (logfile, "%d note-on commands, %d instrument changes.\n",
                   note_on_commands, instrument_changes);
-   }
-   if (do_header) {             // rewrite the file header with the actual number of tone generators used
-      if (fseek (outfile, file_header_num_tgens_position, SEEK_SET) != 0)
-         fprintf (stderr, "Can't seek to number of tone generators in the header\n");
-      else {
-         if (binaryoutput)
-            putc (num_tonegens_used, outfile);
-         else
-            fprintf (outfile, "%2d", num_tonegens_used);
+      if (do_header) {             // rewrite the file header with the actual number of tone generators used
+         if (fseek (outfile, file_header_num_tgens_position, SEEK_SET) != 0)
+            fprintf (stderr, "Can't seek to number of tone generators in the header\n");
+         else {
+            if (binaryoutput)
+               putc (num_tonegens_used, outfile);
+            else
+               fprintf (outfile, "%2d", num_tonegens_used);
+         }
       }
-   }
-   fclose (outfile);
+      fclose (outfile);
+   } /* if (!parseonly) */
+
    if (loggen || logparse)
       fclose (logfile);
    printf ("  Done.\n");

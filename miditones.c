@@ -1094,11 +1094,13 @@ int main (int argc, char *argv[]) {
             fflush (outfile);
             file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
             fprintf (outfile, "%2d, // (Playtune file header)\n", file_header.num_tgens);
+            outfile_bytecount += 6;
          }
       } else if (do_header) {   // write the binary file header
          for (int i = 0; i < sizeof (file_header); ++i)
             fputc (((unsigned char *) &file_header)[i], outfile);
          file_header_num_tgens_position = (char *) &file_header.num_tgens - (char *) &file_header;
+         outfile_bytecount += sizeof (file_header);
       }
    }
 
@@ -1339,6 +1341,7 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       while (tracks_done < num_tracks);
 
       // generate the end-of-score command and some commentary
+      outfile_bytecount++;
       if (binaryoutput)
          putc (CMD_STOP, outfile);
       else {

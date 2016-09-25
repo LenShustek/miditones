@@ -354,7 +354,7 @@ uint8_t *buffer, *hdrptr;
 unsigned long buflen;
 int num_tracks;
 int tracks_done = 0;
-int outfile_maxitems = 25;
+int outfile_maxitems = 26;
 int outfile_itemcount = 0;
 int num_tonegens = DEFAULT_TONEGENS;
 int num_tonegens_used = 0;
@@ -703,7 +703,7 @@ and generate a newline every so often. */
 void outfile_items (int n) {
    outfile_bytecount += n;
    outfile_itemcount += n;
-   if (!binaryoutput && outfile_itemcount > outfile_maxitems) {
+   if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
       fprintf (outfile, "\n");
       outfile_itemcount = 0;
    }

@@ -241,7 +241,6 @@
 *     -Add -n option to specify number of items per output line
 *     -Do better error checking on options
 *     -Reformat option help
-*
 * 26 September 2016, Scott Allen, V1.12
 *     - Fix spelling and minor formatting errors
 *     - Fix -p option parsing and handling, which broke when -pi and -pt were added

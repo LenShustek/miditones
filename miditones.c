@@ -242,8 +242,14 @@
 *     -Do better error checking on options
 *     -Reformat option help
 *
+* 26 September 2016, Scott Allen, V1.12
+*     - Fix spelling and minor formatting errors
+*     - Fix -p option parsing and handling, which broke when -pi and -pt were added
+*     - Fix handling of the -nx option to count more accurately
+*     - Give a proper error message for missing base name
+*     - Include the header and terminator in the score byte count
 */
-#define VERSION "1.11"
+#define VERSION "1.12"
 
 /*--------------------------------------------------------------------------------------------
 

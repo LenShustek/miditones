@@ -8,7 +8,7 @@
 *  only simple tone generators. This is on github at www.github.com/LenShustek/miditones.
 *
 *  Volume ("velocity") and instrument information in the MIDI file can either be
-*  discarded or kept. All the tracks are prcoessed and merged into a single time-ordered
+*  discarded or kept. All the tracks are processed and merged into a single time-ordered
 *  stream of "note on", "note off", "change instrument" and "delay" commands.
 *
 *  This was written for the "Playtune" series of Arduino and Teensy microcontroller
@@ -73,7 +73,7 @@
 *  -b   Generate a binary file with the name <basefilename>.bin, instead of a
 *       C-language source file with the name <basefilename>.c.
 *
-*  -tn  Generate the bytestream so that at most n tone generators are used.
+*  -tn  Generate the bytestream so that at most "n" tone generators are used.
 *       The default is 6 tone generators, and the maximum is 16. The program
 *       will report how many notes had to be discarded because there weren't
 *       enough tone generators.

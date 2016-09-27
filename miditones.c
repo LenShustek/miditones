@@ -9,7 +9,7 @@
 *  only simple tone generators. This is on github at www.github.com/LenShustek/miditones.
 *
 *  Volume ("velocity") and instrument information in the MIDI file can either be
-*  discarded or kept. All the tracks are prcoessed and merged into a single time-ordered
+*  discarded or kept. All the tracks are processed and merged into a single time-ordered
 *  stream of "note on", "note off", "change instrument" and "delay" commands.
 *
 *  This was written for the "Playtune" series of Arduino and Teensy microcontroller
@@ -74,7 +74,7 @@
 *  -b   Generate a binary file with the name <basefilename>.bin, instead of a
 *       C-language source file with the name <basefilename>.c.
 *
-*  -tn  Generate the bytestream so that at most n tone generators are used.
+*  -tn  Generate the bytestream so that at most "n" tone generators are used.
 *       The default is 6 tone generators, and the maximum is 16. The program
 *       will report how many notes had to be discarded because there weren't
 *       enough tone generators.
@@ -236,7 +236,7 @@
 *     -Add -pi and -pt options to ignore or translate the MIDI percussion track 9.
 *     -Remove string.h for more portability; add strlength().
 *     -Add -i option for recording instrument types.in the bytestream.
-*     -Add -d option for generting a file description header.
+*     -Add -d option for generating a file description header.
 *     -Add -dp option to make generating the PROGMEM definition optional
 *     -Add -n option to specify number of items per output line
 *     -Do better error checking on options
@@ -354,7 +354,7 @@ uint8_t *buffer, *hdrptr;
 unsigned long buflen;
 int num_tracks;
 int tracks_done = 0;
-int outfile_maxitems = 25;
+int outfile_maxitems = 26;
 int outfile_itemcount = 0;
 int num_tonegens = DEFAULT_TONEGENS;
 int num_tonegens_used = 0;
@@ -401,7 +401,7 @@ int midi_chan_instrument[16] = {
 /* output bytestream commands, which are also stored in track_status.cmd */
 
 #define CMD_PLAYNOTE    0x90    /* play a note: low nibble is generator #, note is next byte */
-#define CMD_STOPNOTE	0x80    /* stop a note: low nibble is generator # */
+#define CMD_STOPNOTE    0x80    /* stop a note: low nibble is generator # */
 #define CMD_INSTRUMENT  0xc0    /* change instrument; low nibble is generator #, instrument is next byte */
 #define CMD_RESTART     0xe0    /* restart the score from the beginning */
 #define CMD_STOP        0xf0    /* stop playing */
@@ -454,7 +454,7 @@ void SayUsage (char *programName) {
       "  -p   parse only, don't generate bytestream",
       "  -lp  log input parsing",
       "  -lg  log output generation",
-      "  -nx  Put about x items on each line of the C file output",
+      "  -nx  put about x items on each line of the C file output",
       "  -s1  strategy 1: favor track 1",
       "  -s2  strategy 2: try to assign tracks to specific tone generators",
       "  -cn  mask for which tracks to process, e.g. -c3 for only 0 and 1",
@@ -494,8 +494,10 @@ does not start with a dash or a slash*/
                goto opterror;
             break;
          case 'P':
-            if (argv[i][2] == '\0')
+            if (argv[i][2] == '\0') {
                parseonly = true;
+               break;
+            }
             else if (toupper (argv[i][2]) == 'I')
                percussion_ignore = true;
             else if (toupper (argv[i][2]) == 'T')
@@ -661,7 +663,7 @@ int charcmp (const char *buf, const char *match) {
    return 1;
 }
 
-/*	announce a fatal MIDI file format error */
+/* announce a fatal MIDI file format error */
 
 void midi_error (char *msg, unsigned char *bufptr) {
    unsigned char *ptr;
@@ -701,7 +703,7 @@ and generate a newline every so often. */
 void outfile_items (int n) {
    outfile_bytecount += n;
    outfile_itemcount += n;
-   if (!binaryoutput && outfile_itemcount > outfile_maxitems) {
+   if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
       fprintf (outfile, "\n");
       outfile_itemcount = 0;
    }
@@ -1004,6 +1006,11 @@ int main (int argc, char *argv[]) {
 /* process options */
 
    argno = HandleOptions (argc, argv);
+   if (argno == 0) {
+      fprintf (stderr, "\n*** No basefilename given\n\n");
+      SayUsage (argv[0]);
+      exit (4);
+   }
    filebasename = argv[argno];
 
 /* Open the log file */
@@ -1013,7 +1020,7 @@ int main (int argc, char *argv[]) {
       miditones_strlcat (filename, ".log", MAXPATH);
       logfile = fopen (filename, "w");
       if (!logfile) {
-         fprintf (stderr, "Unable to open log file %s", filename);
+         fprintf (stderr, "Unable to open log file %s\n", filename);
          return 1;
       }
       fprintf (logfile, "MIDITONES V%s log file\n", VERSION);
@@ -1025,7 +1032,7 @@ int main (int argc, char *argv[]) {
    miditones_strlcat (filename, ".mid", MAXPATH);
    infile = fopen (filename, "rb");
    if (!infile) {
-      fprintf (stderr, "Unable to open input file %s", filename);
+      fprintf (stderr, "Unable to open input file %s\n", filename);
       return 1;
    }
 
@@ -1036,7 +1043,7 @@ int main (int argc, char *argv[]) {
    fseek (infile, 0, SEEK_SET);
    buffer = (unsigned char *) malloc (buflen + 1);
    if (!buffer) {
-      fprintf (stderr, "Unable to allocate %ld bytes for the file", buflen);
+      fprintf (stderr, "Unable to allocate %ld bytes for the file\n", buflen);
       return 1;
    }
    fread (buffer, buflen, 1, infile);
@@ -1056,7 +1063,7 @@ int main (int argc, char *argv[]) {
          outfile = fopen (filename, "w");
       }
       if (!outfile) {
-         fprintf (stderr, "Unable to open output file %s", filename);
+         fprintf (stderr, "Unable to open output file %s\n", filename);
          return 1;
       }
       file_header.f1 = (velocityoutput ? HDR_F1_VOLUME_PRESENT : 0)
@@ -1087,11 +1094,13 @@ int main (int argc, char *argv[]) {
             fflush (outfile);
             file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
             fprintf (outfile, "%2d, // (Playtune file header)\n", file_header.num_tgens);
+            outfile_bytecount += 6;
          }
       } else if (do_header) {   // write the binary file header
          for (int i = 0; i < sizeof (file_header); ++i)
             fputc (((unsigned char *) &file_header)[i], outfile);
          file_header_num_tgens_position = (char *) &file_header.num_tgens - (char *) &file_header;
+         outfile_bytecount += sizeof (file_header);
       }
    }
 
@@ -1119,7 +1128,7 @@ int main (int argc, char *argv[]) {
 This is not unlike multiway merging used for tape sorting algoritms in the 50's! */
 
    tracknum = 0;
-   if (!parseonly)
+   if (!parseonly) {
       do {                      /* while there are still track notes to process */
          struct track_status *trk;
          struct tonegen_status *tg;
@@ -1331,8 +1340,8 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       }                         /* !parseonly do */
       while (tracks_done < num_tracks);
 
-   if (!parseonly) {
       // generate the end-of-score command and some commentary
+      outfile_bytecount++;
       if (binaryoutput)
          putc (CMD_STOP, outfile);
       else {
@@ -1353,18 +1362,19 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       if (loggen)
          fprintf (logfile, "%d note-on commands, %d instrument changes.\n",
                   note_on_commands, instrument_changes);
-   }
-   if (do_header) {             // rewrite the file header with the actual number of tone generators used
-      if (fseek (outfile, file_header_num_tgens_position, SEEK_SET) != 0)
-         fprintf (stderr, "Can't seek to number of tone generators in the header");
-      else {
-         if (binaryoutput)
-            putc (num_tonegens_used, outfile);
-         else
-            fprintf (outfile, "%2d", num_tonegens_used);
+      if (do_header) {             // rewrite the file header with the actual number of tone generators used
+         if (fseek (outfile, file_header_num_tgens_position, SEEK_SET) != 0)
+            fprintf (stderr, "Can't seek to number of tone generators in the header\n");
+         else {
+            if (binaryoutput)
+               putc (num_tonegens_used, outfile);
+            else
+               fprintf (outfile, "%2d", num_tonegens_used);
+         }
       }
-   }
-   fclose (outfile);
+      fclose (outfile);
+   } /* if (!parseonly) */
+
    if (loggen || logparse)
       fclose (logfile);
    printf ("  Done.\n");

@@ -104,9 +104,11 @@
 * 6 August 2016, L. Shustek, V1.5
 *     - Handle optional instrument change information.
 *     - Look for the optional self-describing file header.
+* 30 September 2016, L. Shustek, V1.6
+*     - Count the number of unnecessary "stop note" commands in the bytestream
 */
 
-#define VERSION "1.5"
+#define VERSION "1.6"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,13 +128,15 @@ int gen_note[MAX_TONEGENS];     // the note we're playing, or SILENT
 int gen_volume[MAX_TONEGENS];   // the volume we're playing
 int gen_instrument[MAX_TONEGENS];       // the instrument we're playing
 bool gen_instrument_changed[MAX_TONEGENS];
+bool gen_did_stopnote[MAX_TONEGENS]; // did we just do a stopnote?
 
 FILE *infile, *outfile;
 unsigned char *buffer, *bufptr;
 unsigned long buflen;
 unsigned int num_tonegens = 6;  // default number of generators
 unsigned int max_tonegen_found = 0;
-unsigned int notes_skipped;
+unsigned int notes_skipped = 0;
+unsigned int stopnotes_before_startnote = 0;
 
 unsigned long timenow = 0;
 unsigned char cmd, gen;
@@ -512,6 +516,8 @@ int main (int argc, char *argv[]) {
          delay = ((unsigned int) cmd << 8) + *++bufptr;
          print_status ();       // tone generator status now
          timenow += delay;      // advance time
+         for (gen = 0; gen < MAX_TONEGENS; ++gen)
+             gen_did_stopnote[gen] = false;
       } else if (cmd != 0xf0) { /* a command */
          gen = cmd & 0x0f;
          if (gen > max_tonegen_found)
@@ -520,6 +526,10 @@ int main (int argc, char *argv[]) {
          if (cmd == 0x90) {     /*  note on  */
             gen_note[gen] = *++bufptr;  // note number
             tonegens_used |= 1 << gen;  // record that we used this generator at least once
+            if (gen_did_stopnote[gen]) {
+                ++stopnotes_before_startnote;
+                // printf("unnecessary stopnote on gen %d\n", gen);
+            }
             if (expect_volume)
                gen_volume[gen] = *++bufptr;     // volume
             if (gen >= num_tonegens)
@@ -528,6 +538,7 @@ int main (int argc, char *argv[]) {
             if (gen_note[gen] == SILENT)
                file_error ("tone generator not on", bufptr);
             gen_note[gen] = SILENT;
+            gen_did_stopnote[gen] = true;
          } else if (cmd == 0xc0) {      /* change instrument */
             gen_instrument[gen] = *++bufptr & 0x7f;
             gen_instrument_changed[gen] = true;
@@ -555,5 +566,6 @@ int main (int argc, char *argv[]) {
    if (notes_skipped)
       printf ("%u notes were not displayed because we were told to show only %u generators.\n",
               notes_skipped, num_tonegens);
+   printf("%u stopnote commands were unnecessary.\n", stopnotes_before_startnote);
    printf ("Done.\n");
 }

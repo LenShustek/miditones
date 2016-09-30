@@ -102,7 +102,8 @@
 *          2:try to keep each track to its own tone generator
 *
 *  -cn  Only process the channel numbers whose bits are on in the number "n".
-*       For example, -c3 means "only process channels 0 and 1"
+*       For example, -c3 means "only process channels 0 and 1". In addition to decimal,
+*       "n" can be also specified in hex using a 0x prefix or octal with a 0 prefix.
 *
 *  -kn  Change the musical key of the output by n chromatic notes.
 *       -k-12 goes one octave down, -k12 goes one octave up, etc.
@@ -110,6 +111,8 @@
 *  -pi  Ignore notes in the MIDI percussion track 9 (also called 10 by some)
 *
 *  -dp  Generate IDE-dependent C code to define PROGMEM
+*
+*  -r   Terminate the output file with a "restart" command instead of a "stop" command.
 *
 *  -h   Give command-line help.
 *
@@ -235,7 +238,7 @@
 *     -Document a summary of the MIDI file format so I don't have to keep looking it up.
 *     -Add -pi and -pt options to ignore or translate the MIDI percussion track 9.
 *     -Remove string.h for more portability; add strlength().
-*     -Add -i option for recording instrument types.in the bytestream.
+*     -Add -i option for recording instrument types in the bytestream.
 *     -Add -d option for generating a file description header.
 *     -Add -dp option to make generating the PROGMEM definition optional
 *     -Add -n option to specify number of items per output line
@@ -247,8 +250,11 @@
 *     - Fix handling of the -nx option to count more accurately
 *     - Give a proper error message for missing base name
 *     - Include the header and terminator in the score byte count
+* 30 September 2016, Scott Allen, V1.13
+*     - Allow -c channel numbers to be specified as hex or octal
+*     - Add -r to end the file with "repeat" instead of "score end"
 */
-#define VERSION "1.12"
+#define VERSION "1.13"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -353,7 +359,8 @@ struct track_header {
 #define PERCUSSION_TRACK 9      /* the track MIDI uses for percussion sounds */
 
 bool loggen, logparse, parseonly, strategy1, strategy2, binaryoutput, define_progmem,
-   velocityoutput, instrumentoutput, percussion_ignore, percussion_translate, do_header;
+   velocityoutput, instrumentoutput, percussion_ignore, percussion_translate, do_header,
+   gen_restart;
 FILE *infile, *outfile, *logfile;
 uint8_t *buffer, *hdrptr;
 unsigned long buflen;
@@ -466,6 +473,7 @@ void SayUsage (char *programName) {
       "  -kn  key shift in chromatic notes, positive or negative",
       "  -pi  ignore notes in the percussion track (9)",
       "  -dp  define PROGMEM in output C code",
+      "  -r   terminate output file with \"restart\" instead of \"stop\" command",
       NULL
    };
    int i = 0;
@@ -552,7 +560,7 @@ does not start with a dash or a slash*/
                goto opterror;
             break;
          case 'C':
-            if (sscanf (&argv[i][2], "%d%n", &channel_mask, &nch) != 1 || channel_mask > 0xffff)
+            if (sscanf (&argv[i][2], "%i%n", &channel_mask, &nch) != 1 || channel_mask > 0xffff)
                goto opterror;
             printf ("Channel (track) mask is %04X.\n", channel_mask);
             if (argv[i][2 + nch] != '\0')
@@ -576,6 +584,11 @@ does not start with a dash or a slash*/
             else
                goto opterror;
             if (argv[i][3] != '\0')
+               goto opterror;
+            break;
+         case 'R':
+            gen_restart = true;
+            if (argv[i][2] != '\0')
                goto opterror;
             break;
             /* add more  option switches here */
@@ -1348,11 +1361,11 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
       // generate the end-of-score command and some commentary
       outfile_bytecount++;
       if (binaryoutput)
-         putc (CMD_STOP, outfile);
+         putc (gen_restart ? CMD_RESTART : CMD_STOP, outfile);
       else {
          fprintf (outfile,
                   "0x%02x};\n// This score contains %ld bytes, and %d tone generator%s used.\n",
-                  CMD_STOP, outfile_bytecount, num_tonegens_used,
+                  gen_restart ? CMD_RESTART : CMD_STOP, outfile_bytecount, num_tonegens_used,
                   num_tonegens_used == 1 ? " is" : "s are");
          if (notes_skipped)
             fprintf (outfile, "// %d notes had to be skipped.\n", notes_skipped);

@@ -101,7 +101,8 @@
 *          2:try to keep each track to its own tone generator
 *
 *  -cn  Only process the channel numbers whose bits are on in the number "n".
-*       For example, -c3 means "only process channels 0 and 1"
+*       For example, -c3 means "only process channels 0 and 1". In addition to decimal,
+*       "n" can be also specified in hex using a 0x prefix or octal with a 0 prefix.
 *
 *  -kn  Change the musical key of the output by n chromatic notes.
 *       -k-12 goes one octave down, -k12 goes one octave up, etc.
@@ -109,6 +110,8 @@
 *  -pi  Ignore notes in the MIDI percussion track 9 (also called 10 by some)
 *
 *  -dp  Generate IDE-dependent C code to define PROGMEM
+*
+*  -r   Terminate the output file with a "restart" command instead of a "stop" command.
 *
 *  -h   Give command-line help.
 *
@@ -165,4 +168,4 @@
 *     and should be ignored by players.
 *
 *  Len Shustek, 4 Feb 2011 and later
-*********************************************************************************************/
+*

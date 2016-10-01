@@ -126,9 +126,9 @@
 *  If the high-order bit of the byte is 1, then it is one of the following commands:
 *
 *    9t nn [vv]
-*           Start playing note nn on tone generator t.  Generators are numbered
-*           starting with 0. The note numbers are the MIDI numbers for the chromatic
-*           scale, with decimal 60 being Middle C, and decimal 69 being Middle A (440 Hz).
+*           Start playing note nn on tone generator t, replacing any previous note.  
+*           Generators are numbered starting with 0. The note numbers are the MIDI 
+*           numbers for the chromatic scale, with decimal 69 being Middle A (440 Hz).
 *           If the -v option was given, a second byte is added to indicate note volume.
 *
 *    8t     Stop playing the note on tone generator t.
@@ -139,7 +139,6 @@
 *    F0     End of score; stop playing.
 *
 *    E0     End of score; start playing again from the beginning.
-*           (Shown for completeness; MIDITONES won't generate this.)
 *
 *  If the high-order bit of the byte is 0, it is a command to delay for a while until
 *  the next note change.  The other 7 bits and the 8 bits of the following byte are

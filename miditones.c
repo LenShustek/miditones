@@ -838,7 +838,7 @@ void find_note (int tracknum) {
       }
       if (event == 0xff) {      /* meta-event */
          meta_cmd = *t->trkptr++;
-         meta_length = *t->trkptr++;
+         meta_length = get_varlen (&t->trkptr);
          switch (meta_cmd) {
          case 0x00:
             if (logparse)

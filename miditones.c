@@ -1220,23 +1220,25 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
 
          delta_time = earliest_time - timenow;
          if (delta_time) {
-            gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
             /* Convert ticks to milliseconds based on the current tempo */
             unsigned long long temp;
             temp = ((unsigned long long) delta_time * tempo) / ticks_per_beat;
             delta_msec = temp / 1000;   // get around LCC compiler bug
-            if (loggen)
-               fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
-            if (delta_msec > 0x7fff)
-               midi_error ("INTERNAL: time delta too big", trk->trkptr);
-            /* output a 15-bit delay in big-endian format */
-            if (binaryoutput) {
-               putc ((unsigned char) (delta_msec >> 8), outfile);
-               putc ((unsigned char) (delta_msec & 0xff), outfile);
-               outfile_bytecount += 2;
-            } else {
-               fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
-               outfile_items (2);
+            if (delta_msec) {
+              gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
+              if (loggen)
+                 fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
+              if (delta_msec > 0x7fff)
+                 midi_error ("INTERNAL: time delta too big", trk->trkptr);
+              /* output a 15-bit delay in big-endian format */
+              if (binaryoutput) {
+                 putc ((unsigned char) (delta_msec >> 8), outfile);
+                 putc ((unsigned char) (delta_msec & 0xff), outfile);
+                 outfile_bytecount += 2;
+              } else {
+                 fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
+                 outfile_items (2);
+              }
             }
          }
          timenow = earliest_time;

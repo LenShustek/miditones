@@ -257,8 +257,12 @@
 *       them until we see if a "note on" is generated before the next wait.
 *       Thanks to Scott Allen for inspiring me to do this. In the best case we've
 *       seen, this makes the bytestream 21% smaller!
+* 13 November 2017, Earle Philhower, V1.15
+*     - Allow META fields to be larger than 127 bytes.
+*  2 January 2018, Kodest, V1.16
+*     - Don't generate zero-length delays
 */
-#define VERSION "1.14"
+#define VERSION "1.16"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -1224,21 +1228,21 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
             unsigned long long temp;
             temp = ((unsigned long long) delta_time * tempo) / ticks_per_beat;
             delta_msec = temp / 1000;   // get around LCC compiler bug
-            if (delta_msec) {
-              gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
-              if (loggen)
-                 fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
-              if (delta_msec > 0x7fff)
-                 midi_error ("INTERNAL: time delta too big", trk->trkptr);
-              /* output a 15-bit delay in big-endian format */
-              if (binaryoutput) {
-                 putc ((unsigned char) (delta_msec >> 8), outfile);
-                 putc ((unsigned char) (delta_msec & 0xff), outfile);
-                 outfile_bytecount += 2;
-              } else {
-                 fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
-                 outfile_items (2);
-              }
+            if (delta_msec) { // if time delay didn't round down to zero msec
+               gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
+               if (loggen)
+                  fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
+               if (delta_msec > 0x7fff)
+                  midi_error ("INTERNAL: time delta too big", trk->trkptr);
+               /* output a 15-bit delay in big-endian format */
+               if (binaryoutput) {
+                  putc ((unsigned char) (delta_msec >> 8), outfile);
+                  putc ((unsigned char) (delta_msec & 0xff), outfile);
+                  outfile_bytecount += 2;
+               } else {
+                  fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
+                  outfile_items (2);
+               }
             }
          }
          timenow = earliest_time;

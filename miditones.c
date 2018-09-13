@@ -1016,7 +1016,8 @@ void find_note (int tracknum) {
 
 void gen_stopnotes(void) {
     struct tonegen_status *tg;
-    for (int tgnum = 0; tgnum < num_tonegens; ++tgnum) {
+    int tgnum;
+    for (tgnum = 0; tgnum < num_tonegens; ++tgnum) {
         tg = &tonegen[tgnum];
         if (tg->stopnote_pending) {
              if (binaryoutput) {
@@ -1143,7 +1144,8 @@ int main (int argc, char *argv[]) {
             outfile_bytecount += 6;
          }
       } else if (do_header) {   // write the binary file header
-         for (int i = 0; i < sizeof (file_header); ++i)
+         int i;
+         for (i = 0; i < sizeof (file_header); ++i)
             fputc (((unsigned char *) &file_header)[i], outfile);
          file_header_num_tgens_position = (char *) &file_header.num_tgens - (char *) &file_header;
          outfile_bytecount += sizeof (file_header);

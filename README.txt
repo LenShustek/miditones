@@ -17,6 +17,7 @@
 *    www.github.com/LenShustek/ATtiny-playtune
 *    www.github.com/LenShustek/Playtune_poll
 *    www.github.com/LenShustek/Playtune_samp
+*    www.github.com/LenShustek/Playtune_synth
 *  MIDITONES may also prove useful for other simple music synthesizers..
 *
 *  The output can be either a C-language source code fragment that initializes an

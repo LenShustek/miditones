@@ -18,6 +18,7 @@
 *    www.github.com/LenShustek/ATtiny-playtune
 *    www.github.com/LenShustek/Playtune_poll
 *    www.github.com/LenShustek/Playtune_samp
+*    www.github.com/LenShustek/Playtune_synth
 *  MIDITONES may also prove useful for other simple music synthesizers..
 *
 *  The output can be either a C-language source code fragment that initializes an
@@ -261,8 +262,10 @@
 *     - Allow META fields to be larger than 127 bytes.
 *  2 January 2018, Kodest, V1.16
 *     - Don't generate zero-length delays
+* 13 September 2018, Paul Stoffregen, V1.17
+      - Fix compile errors on Linux with gcc run in default mode
 */
-#define VERSION "1.16"
+#define VERSION "1.17"
 
 /*--------------------------------------------------------------------------------------------
 

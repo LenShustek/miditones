@@ -106,6 +106,8 @@
 *     - Look for the optional self-describing file header.
 * 30 September 2016, L. Shustek, V1.6
 *     - Count the number of unnecessary "stop note" commands in the bytestream
+* 3 January 2019, Chris van Marle, V1.7
+*     - Handle repeat command (0xe0)
 */
 
 #define VERSION "1.6"
@@ -518,7 +520,7 @@ int main (int argc, char *argv[]) {
          timenow += delay;      // advance time
          for (gen = 0; gen < MAX_TONEGENS; ++gen)
              gen_did_stopnote[gen] = false;
-      } else if (cmd != 0xf0) { /* a command */
+      } else if (cmd != 0xf0 && cmd != 0xe0) { /* a command */
          gen = cmd & 0x0f;
          if (gen > max_tonegen_found)
             max_tonegen_found = gen;
@@ -556,7 +558,7 @@ int main (int argc, char *argv[]) {
       --bufptr;                 //don't do 0xf0 for code, because we don't want the trailing comma
    print_status ();             // print final status
    if (codeoutput) {
-      fprintf (outfile, " 0xf0};\n");
+      fprintf (outfile, " 0x%02x};\n", *(bufptr+1) & 0xf0);
       num_tonegens_used = countbits (tonegens_used);
       fprintf (outfile, "// This score contains %ld bytes, and %d tone generator%s used.\n",
                buflen, num_tonegens_used, num_tonegens_used == 1 ? " is" : "s are");

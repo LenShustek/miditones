@@ -127,8 +127,8 @@
 *  If the high-order bit of the byte is 1, then it is one of the following commands:
 *
 *    9t nn [vv]
-*           Start playing note nn on tone generator t, replacing any previous note.  
-*           Generators are numbered starting with 0. The note numbers are the MIDI 
+*           Start playing note nn on tone generator t, replacing any previous note.
+*           Generators are numbered starting with 0. The note numbers are the MIDI
 *           numbers for the chromatic scale, with decimal 69 being Middle A (440 Hz).
 *           If the -v option was given, a second byte is added to indicate note volume.
 *
@@ -191,7 +191,7 @@
 * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF, OR
 * IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *********************************************************************************************/
-// formatted with: indent miditones.c -br -brf -brs -ce -npsl -nut -i3 -l100 -lc100
+// formatted with: Astyle -style=lisp -indent=spaces=3 -mode=c
 
 /*
 * Change log
@@ -264,8 +264,14 @@
 *     - Don't generate zero-length delays
 * 13 September 2018, Paul Stoffregen, V1.17
       - Fix compile errors on Linux with gcc run in default mode
+*  1 January 2019, Len Shustek, V1.18
+      - Fix the bug found by Chris van Marle (thanks!) that caused delays not to be
+        generated until the tempo was set. (The default is 500,000 usec/beat, not 0.)
+      - Abandon LCC and compile under Microsoft Visual Studio 2017.
+      - Reformat to condense the source code, so you see more protein and less
+        syntactic sugar on each screen.
 */
-#define VERSION "1.17"
+#define VERSION "1.18"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -280,61 +286,57 @@ lower case letters are hex digits. If preceeded by 0, only low 7 bits are used.
 "xx" are ascii text characters
 {xxx}...  means indefinite repeat of xxx
 
-A MIDI file is: header_chunk {track_chunk}...
+a MIDI file is:
+  header_chunk {track_chunk}...
 
-header_chunk
-"MThd" 00000006 ffff nnnn dddd
+a header_chunk is:
+  "MThd" 00000006 ffff nnnn dddd
 
-track_chunk
+a track_chunk is:
+  "MTrk" llllllll {<deltatime> track_event}...
 
-"MTrk" llllllll {<deltatime> track_event}...
+a running status track_event is:
+  0x to 7x: assume a missing 8n to En event code which is the same as the last MIDI-event track_event
 
-"running status" track_event
+a MIDI-event track_event is:
+  8n 0kk 0vv   note off, channel n, note kk, velocity vv
+  9n 0kk 0vv   note on, channel n, note kk, velocity vv
+  An 0kk 0vv   key pressure, channel n, note kk, pressure vv
+  Bn 0cc 0vv   control value change, channel n, controller cc, new value vv
+  Cn 0pp       program patch (instrument) change, channel n, new program pp
+  Dn 0vv       channel pressure, channel n, pressure vv
+  En 0ll 0mm   pitch wheel change, value llmm
 
-0x to 7x: assume a missing 8n to En event code which is the same as the last MIDI-event track_event
+  Note that channel 9 (called 10 by some programs) is used for percussion, particularly notes 35 to 81.
 
-MIDI-event track_event
+a Sysex event track_event is:
+  F0 0ii {0dd}... F7  system-dependent data for manufacture ii. See www.gweep.net/~prefect/eng/reference/protocol/midispec.html
+  F2 0ll 0mm   song position pointer
+  F3 0ss       song select
+  F6           tune request
+  F7           end of system-dependent data
+  F8           timing clock sync
+  FA           start playing
+  FB           continue playing
+  FC           stop playing
+  FE           active sensing (hearbeat)
 
-8n 0kk 0vv   note off, channel n, note kk, velocity vv
-9n 0kk 0vv   note on, channel n, note kk, velocity vv
-An 0kk 0vv   key pressure, channel n, note kk, pressure vv
-Bn 0cc 0vv   control value change, channel n, controller cc, new value vv
-Cn 0pp       program patch (instrument) change, channel n, new program pp
-Dn 0vv       channel pressure, channel n, pressure vv
-En 0ll 0mm   pitch wheel change, value llmm
-
-Note that channel 9 (called 10 by some programs) is used for percussion, particularly notes 35 to 81.
-
-Sysex event track_event
-
-F0 0ii {0dd}... F7  system-dependent data for manufacture ii. See www.gweep.net/~prefect/eng/reference/protocol/midispec.html
-F2 0ll 0mm   song position pointer
-F3 0ss       song select
-F6           tune request
-F7           end of system-dependent data
-F8           timing clock sync
-FA           start playing
-FB           continue playing
-FC           stop playing
-FE           active sensing (hearbeat)
-
-Meta event track_event
-
-FF 00 02 ssss         specify sequence number
-FF 01 <len> "xx"...   arbitrary text
-FF 02 <len> "xx"...   copyright notice
-FF 03 <len> "xx"...   sequence or track name
-FF 04 <len> "xx"...   instrument name
-FF 05 <len> "xx"...   lyric to be sung
-FF 06 <len> "xx"...   name of marked point in the score
-FF 07 <len> "xx"...   description of cue point in the score
-FF 20 01 0c           default channel for subsequent events without a channel is c
-FF 2F 00              end of track
-FF 51 03 tttttt       set tempo in microseconds per quarter-note
-FF 54 05 hhmmssfrff   set SMPTE time to start the track
-FF 58 04 nnddccbb     set time signature
-FF 59 02 sfmi         set key signature
-FF 7F <len> data      sequencer-specific data
+a meta event track_event is:
+  FF 00 02 ssss         specify sequence number
+  FF 01 <len> "xx"...   arbitrary text
+  FF 02 <len> "xx"...   copyright notice
+  FF 03 <len> "xx"...   sequence or track name
+  FF 04 <len> "xx"...   instrument name
+  FF 05 <len> "xx"...   lyric to be sung
+  FF 06 <len> "xx"...   name of marked point in the score
+  FF 07 <len> "xx"...   description of cue point in the score
+  FF 20 01 0c           default channel for subsequent events without a channel is c
+  FF 2F 00              end of track
+  FF 51 03 tttttt       set tempo in microseconds per quarter-note
+  FF 54 05 hhmmssfrff   set SMPTE time to start the track
+  FF 58 04 nnddccbb     set time signature
+  FF 59 02 sfmi         set key signature
+  FF 7F <len> data      sequencer-specific data
 
 --------------------------------------------------------------------------------------------*/
 
@@ -353,13 +355,11 @@ struct midi_header {
    uint32_t header_size;
    uint16_t format_type;
    uint16_t number_of_tracks;
-   uint16_t time_division;
-};
+   uint16_t time_division; };
 
 struct track_header {
    int8_t MTrk[4];
-   uint32_t track_size;
-};
+   uint32_t track_size; };
 
 
 /***********  Global variables  ******************/
@@ -368,10 +368,11 @@ struct track_header {
 #define DEFAULT_TONEGENS 6      /* default number of tone generators */
 #define MAX_TRACKS 24           /* max number of MIDI tracks we will process */
 #define PERCUSSION_TRACK 9      /* the track MIDI uses for percussion sounds */
+#define DEFAULT_TEMPO 500000L   /* the MIDI-specified default tempo in usec/beat */
 
 bool loggen, logparse, parseonly, strategy1, strategy2, binaryoutput, define_progmem,
-   velocityoutput, instrumentoutput, percussion_ignore, percussion_translate, do_header,
-   gen_restart;
+     velocityoutput, instrumentoutput, percussion_ignore, percussion_translate, do_header,
+     gen_restart;
 FILE *infile, *outfile, *logfile;
 uint8_t *buffer, *hdrptr;
 unsigned long buflen;
@@ -398,8 +399,7 @@ struct tonegen_status {         /* current status of a tone generator */
    int instrument;              /* what instrument? */
 } tonegen[MAX_TONEGENS] = {
    {
-   0}
-};
+      0 } };
 
 struct track_status {           /* current processing point of a MIDI track */
    uint8_t *trkptr;             /* ptr to the next note change */
@@ -415,12 +415,10 @@ struct track_status {           /* current processing point of a MIDI track */
    bool tonegens[MAX_TONEGENS]; /* which tone generators our notes are playing on */
 } track[MAX_TRACKS] = {
    {
-   0}
-};
+      0 } };
 
 int midi_chan_instrument[16] = {
-   0
-};                              /* which instrument is currently being played on each channel */
+   0 };                             /* which instrument is currently being played on each channel */
 
 /* output bytestream commands, which are also stored in track_status.cmd */
 
@@ -444,7 +442,7 @@ struct file_hdr_t {             /* what the optional file header looks like */
    unsigned char f2;            // flag byte 2
    unsigned char num_tgens;     // how many tone generators are used by this score
 } file_header = {
-'P', 't', sizeof (struct file_hdr_t), 0, 0, MAX_TONEGENS};
+   'P', 't', sizeof (struct file_hdr_t), 0, 0, MAX_TONEGENS };
 
 #define HDR_F1_VOLUME_PRESENT 0x80
 #define HDR_F1_INSTRUMENTS_PRESENT 0x40
@@ -486,21 +484,19 @@ void SayUsage (char *programName) {
       "  -pi  ignore notes in the percussion track (9)",
       "  -dp  define PROGMEM in output C code",
       "  -r   terminate output file with \"restart\" instead of \"stop\" command",
-      NULL
-   };
+      NULL };
    int i = 0;
    while (usage[i] != NULL)
-      fprintf (stderr, "%s\n", usage[i++]);
-}
+      fprintf (stderr, "%s\n", usage[i++]); }
 
 
 int HandleOptions (int argc, char *argv[]) {
-/* returns the index of the first argument that is not an option; i.e.
-does not start with a dash or a slash*/
+   /* returns the index of the first argument that is not an option; i.e.
+   does not start with a dash or a slash*/
 
    int i, nch, firstnonoption = 0;
 
-/* --- The following skeleton comes from C:\lcc\lib\wizard\textmode.tpl. */
+   /* --- The following skeleton comes from C:\lcc\lib\wizard\textmode.tpl. */
    for (i = 1; i < argc; i++) {
       if (argv[i][0] == '/' || argv[i][0] == '-') {
          switch (toupper (argv[i][1])) {
@@ -521,8 +517,7 @@ does not start with a dash or a slash*/
          case 'P':
             if (argv[i][2] == '\0') {
                parseonly = true;
-               break;
-            }
+               break; }
             else if (toupper (argv[i][2]) == 'I')
                percussion_ignore = true;
             else if (toupper (argv[i][2]) == 'T')
@@ -559,7 +554,7 @@ does not start with a dash or a slash*/
             break;
          case 'T':
             if (sscanf (&argv[i][2], "%d%n", &num_tonegens, &nch) != 1
-                || num_tonegens < 1 || num_tonegens > MAX_TONEGENS)
+                  || num_tonegens < 1 || num_tonegens > MAX_TONEGENS)
                goto opterror;
             printf ("Using %d tone generators.\n", num_tonegens);
             if (argv[i][2 + nch] != '\0')
@@ -580,7 +575,7 @@ does not start with a dash or a slash*/
             break;
          case 'K':
             if (sscanf (&argv[i][2], "%d%n", &keyshift, &nch) != 1 || keyshift < -100
-                || keyshift > 100)
+                  || keyshift > 100)
                goto opterror;
             printf ("Using keyshift %d.\n", keyshift);
             if (argv[i][2 + nch] != '\0')
@@ -589,8 +584,7 @@ does not start with a dash or a slash*/
          case 'D':
             if (argv[i][2] == '\0') {
                do_header = true;
-               break;
-            }
+               break; }
             if (toupper (argv[i][2]) == 'P')
                define_progmem = true;
             else
@@ -604,27 +598,22 @@ does not start with a dash or a slash*/
                goto opterror;
             break;
             /* add more  option switches here */
-          opterror:
+opterror:
          default:
             fprintf (stderr, "\n*** unknown option: %s\n\n", argv[i]);
             SayUsage (argv[0]);
-            exit (4);
-         }
-      } else {
+            exit (4); } }
+      else {
          firstnonoption = i;
-         break;
-      }
-   }
-   return firstnonoption;
-}
+         break; } }
+   return firstnonoption; }
 
 void print_command_line (int argc, char *argv[]) {
    int i;
    fprintf (outfile, "// command line: ");
    for (i = 0; i < argc; i++)
       fprintf (outfile, "%s ", argv[i]);
-   fprintf (outfile, "\n");
-}
+   fprintf (outfile, "\n"); }
 
 
 /****************  utility routines  **********************/
@@ -633,27 +622,23 @@ void print_command_line (int argc, char *argv[]) {
 int strlength (const char *str) {
    int i;
    for (i = 0; str[i] != '\0'; ++i);
-   return i;
-}
+   return i; }
 
 /* safe string copy */
 size_t miditones_strlcpy (char *dst, const char *src, size_t siz) {
    char *d = dst;
    const char *s = src;
    size_t n = siz;
-/* Copy as many bytes as will fit */
+   /* Copy as many bytes as will fit */
    if (n != 0) {
       while (--n != 0) {
          if ((*d++ = *s++) == '\0')
-            break;
-      }
-   }
-/* Not enough room in dst, add NUL and traverse rest of src */
+            break; } }
+   /* Not enough room in dst, add NUL and traverse rest of src */
    if (n == 0) {
       if (siz != 0)
          *d = '\0';             /* NUL-terminate dst */
-      while (*s++);
-   }
+      while (*s++); }
    return (s - src - 1);        /* count does not include NUL */
 }
 
@@ -664,7 +649,7 @@ size_t miditones_strlcat (char *dst, const char *src, size_t siz) {
    const char *s = src;
    size_t n = siz;
    size_t dlen;
-/* Find the end of dst and adjust bytes left but don't go past end */
+   /* Find the end of dst and adjust bytes left but don't go past end */
    while (n-- != 0 && *d != '\0')
       d++;
    dlen = d - dst;
@@ -674,10 +659,8 @@ size_t miditones_strlcat (char *dst, const char *src, size_t siz) {
    while (*s != '\0') {
       if (n != 1) {
          *d++ = *s;
-         n--;
-      }
-      s++;
-   }
+         n--; }
+      s++; }
    *d = '\0';
    return (dlen + (s - src));   /* count does not include NUL */
 }
@@ -690,8 +673,7 @@ int charcmp (const char *buf, const char *match) {
    for (i = 0; i < len; ++i)
       if (buf[i] != match[i])
          return 0;
-   return 1;
-}
+   return 1; }
 
 /* announce a fatal MIDI file format error */
 
@@ -699,33 +681,29 @@ void midi_error (char *msg, unsigned char *bufptr) {
    unsigned char *ptr;
    fprintf (stderr, "---> MIDI file error at position %04X (%d): %s\n",
             (uint16_t) (bufptr - buffer), (uint16_t) (bufptr - buffer), msg);
-/* print some bytes surrounding the error */
+   /* print some bytes surrounding the error */
    ptr = bufptr - 16;
    if (ptr < buffer)
       ptr = buffer;
    for (; ptr <= bufptr + 16 && ptr < buffer + buflen; ++ptr)
       fprintf (stderr, ptr == bufptr ? " [%02X]  " : "%02X ", *ptr);
    fprintf (stderr, "\n");
-   exit (8);
-}
+   exit (8); }
 
 /* check that we have a specified number of bytes left in the buffer */
 
 void chk_bufdata (unsigned char *ptr, unsigned long int len) {
    if ((unsigned) (ptr + len - buffer) > buflen)
-      midi_error ("data missing", ptr);
-}
+      midi_error ("data missing", ptr); }
 
 /* fetch big-endian numbers */
 
 uint16_t rev_short (uint16_t val) {
-   return ((val & 0xff) << 8) | ((val >> 8) & 0xff);
-}
+   return ((val & 0xff) << 8) | ((val >> 8) & 0xff); }
 
 uint32_t rev_long (uint32_t val) {
    return (((rev_short ((uint16_t) val) & 0xffff) << 16) |
-           (rev_short ((uint16_t) (val >> 16)) & 0xffff));
-}
+           (rev_short ((uint16_t) (val >> 16)) & 0xffff)); }
 
 /* account for new items in the non-binary output file
 and generate a newline every so often. */
@@ -735,9 +713,7 @@ void outfile_items (int n) {
    outfile_itemcount += n;
    if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
       fprintf (outfile, "\n");
-      outfile_itemcount = 0;
-   }
-}
+      outfile_itemcount = 0; } }
 
 /**************  process the MIDI file header  *****************/
 
@@ -760,11 +736,9 @@ void process_header (void) {
       fprintf (logfile, "Format type %d\n", rev_short (hdr->format_type));
       fprintf (logfile, "Number of tracks %d\n", num_tracks);
       fprintf (logfile, "Time division %04X\n", time_division);
-      fprintf (logfile, "Ticks/beat = %d\n", ticks_per_beat);
-   }
+      fprintf (logfile, "Ticks/beat = %d\n", ticks_per_beat); }
    hdrptr += rev_long (hdr->header_size) + 8;   /* point past header to track header, presumably. */
-   return;
-}
+   return; }
 
 
 /****************  Process a MIDI track header *******************/
@@ -791,8 +765,8 @@ void start_track (int tracknum) {
 /* Get a MIDI-style variable-length integer */
 
 unsigned long get_varlen (uint8_t ** ptr) {
-/* Get a 1-4 byte variable-length value and adjust the pointer past it.
-These are a succession of 7-bit values with a MSB bit of zero marking the end */
+   /* Get a 1-4 byte variable-length value and adjust the pointer past it.
+   These are a succession of 7-bit values with a MSB bit of zero marking the end */
 
    unsigned long val;
    int i, byte;
@@ -802,10 +776,8 @@ These are a succession of 7-bit values with a MSB bit of zero marking the end */
       byte = *(*ptr)++;
       val = (val << 7) | (byte & 0x7f);
       if (!(byte & 0x80))
-         return val;
-   }
-   return val;
-}
+         return val; }
+   return val; }
 
 
 /***************  Process the MIDI track data  ***************************/
@@ -823,7 +795,7 @@ void find_note (int tracknum) {
    struct track_status *t;
    char *tag;
 
-/* process events */
+   /* process events */
 
    t = &track[tracknum];        /* our track status structure */
    while (t->trkptr < t->trkend) {
@@ -832,17 +804,14 @@ void find_note (int tracknum) {
       if (logparse) {
          fprintf (logfile, "trk %d ", tracknum);
          if (delta_time) {
-            fprintf (logfile, "delta time %4ld, ", delta_time);
-         } else {
-            fprintf (logfile, "                 ");
-         }
-      }
+            fprintf (logfile, "delta time %4ld, ", delta_time); }
+         else {
+            fprintf (logfile, "                 "); } }
       t->time += delta_time;
       if (*t->trkptr < 0x80)
          event = t->last_event; /* using "running status": same event as before */
       else {                    /* otherwise get new "status" (event type) */
-         event = *t->trkptr++;
-      }
+         event = *t->trkptr++; }
       if (event == 0xff) {      /* meta-event */
          meta_cmd = *t->trkptr++;
          meta_length = get_varlen (&t->trkptr);
@@ -865,10 +834,8 @@ void find_note (int tracknum) {
                fprintf (outfile, "// ");
                for (i = 0; i < meta_length; ++i) {
                   int ch = t->trkptr[i];
-                  fprintf (outfile, "%c", isprint (ch) ? ch : '?');
-               }
-               fprintf (outfile, "\n");
-            }
+                  fprintf (outfile, "%c", isprint (ch) ? ch : '?'); }
+               fprintf (outfile, "\n"); }
             goto show_text;
          case 0x04:
             tag = "instrument name";
@@ -881,15 +848,13 @@ void find_note (int tracknum) {
             goto show_text;
          case 0x07:
             tag = "cue point";
-          show_text:
+show_text:
             if (logparse) {
                fprintf (logfile, "meta cmd %02X, length %d, %s: \"", meta_cmd, meta_length, tag);
                for (i = 0; i < meta_length; ++i) {
                   int ch = t->trkptr[i];
-                  fprintf (logfile, "%c", isprint (ch) ? ch : '?');
-               }
-               fprintf (logfile, "\"\n");
-            }
+                  fprintf (logfile, "%c", isprint (ch) ? ch : '?'); }
+               fprintf (logfile, "\"\n"); }
             break;
          case 0x20:
             if (logparse)
@@ -925,18 +890,15 @@ void find_note (int tracknum) {
             goto show_hex;
          default:              /* unknown meta command */
             tag = "???";
-          show_hex:
+show_hex:
             if (logparse) {
                fprintf (logfile, "meta cmd %02X, length %d, %s: ", meta_cmd, meta_length, tag);
                for (i = 0; i < meta_length; ++i)
                   fprintf (logfile, "%02X ", t->trkptr[i]);
-               fprintf (logfile, "\n");
-            }
+               fprintf (logfile, "\n"); }
 
-            break;
-         }
-         t->trkptr += meta_length;
-      }
+            break; }
+         t->trkptr += meta_length; }
 
       else if (event < 0x80)
          midi_error ("Unknown MIDI event type", t->trkptr);
@@ -950,7 +912,7 @@ void find_note (int tracknum) {
          case 0x8:
             t->note = *t->trkptr++;
             velocity = *t->trkptr++;
-          note_off:
+note_off:
             if (logparse)
                fprintf (logfile, "note %d off, chan %d, velocity %d\n", t->note, chan, velocity);
             if ((1 << chan) & channel_mask) {   /* if we're processing this channel */
@@ -1006,34 +968,26 @@ void find_note (int tracknum) {
             t->trkptr += sysex_length;
             break;
          default:
-            midi_error ("Unknown MIDI command", t->trkptr);
-         }
-      }
-   }
+            midi_error ("Unknown MIDI command", t->trkptr); } } }
    t->cmd = CMD_TRACKDONE;      /* no more notes to process */
-   ++tracks_done;
-}
+   ++tracks_done; }
 
 
 /*  generate "stop note" commands for any channels that have them pending */
 
 void gen_stopnotes(void) {
-    struct tonegen_status *tg;
-    int tgnum;
-    for (tgnum = 0; tgnum < num_tonegens; ++tgnum) {
-        tg = &tonegen[tgnum];
-        if (tg->stopnote_pending) {
-             if (binaryoutput) {
-                putc (CMD_STOPNOTE | tgnum, outfile);
-                outfile_bytecount += 1;
-             } else {
-                fprintf (outfile, "0x%02X, ", CMD_STOPNOTE | tgnum);
-                outfile_items (1);
-            }
-            tg->stopnote_pending = false;
-        }
-    }
-}
+   struct tonegen_status *tg;
+   int tgnum;
+   for (tgnum = 0; tgnum < num_tonegens; ++tgnum) {
+      tg = &tonegen[tgnum];
+      if (tg->stopnote_pending) {
+         if (binaryoutput) {
+            putc (CMD_STOPNOTE | tgnum, outfile);
+            outfile_bytecount += 1; }
+         else {
+            fprintf (outfile, "0x%02X, ", CMD_STOPNOTE | tgnum);
+            outfile_items (1); }
+         tg->stopnote_pending = false; } } }
 
 /*********************  main  ****************************/
 
@@ -1050,20 +1004,18 @@ int main (int argc, char *argv[]) {
    printf ("MIDITONES V%s, (C) 2011-2016 Len Shustek\n", VERSION);
    if (argc == 1) {             /* no arguments */
       SayUsage (argv[0]);
-      return 1;
-   }
+      return 1; }
 
-/* process options */
+   /* process options */
 
    argno = HandleOptions (argc, argv);
    if (argno == 0) {
       fprintf (stderr, "\n*** No basefilename given\n\n");
       SayUsage (argv[0]);
-      exit (4);
-   }
+      exit (4); }
    filebasename = argv[argno];
 
-/* Open the log file */
+   /* Open the log file */
 
    if (logparse || loggen) {
       miditones_strlcpy (filename, filebasename, MAXPATH);
@@ -1071,22 +1023,19 @@ int main (int argc, char *argv[]) {
       logfile = fopen (filename, "w");
       if (!logfile) {
          fprintf (stderr, "Unable to open log file %s\n", filename);
-         return 1;
-      }
-      fprintf (logfile, "MIDITONES V%s log file\n", VERSION);
-   }
+         return 1; }
+      fprintf (logfile, "MIDITONES V%s log file\n", VERSION); }
 
-/* Open the input file */
+   /* Open the input file */
 
    miditones_strlcpy (filename, filebasename, MAXPATH);
    miditones_strlcat (filename, ".mid", MAXPATH);
    infile = fopen (filename, "rb");
    if (!infile) {
       fprintf (stderr, "Unable to open input file %s\n", filename);
-      return 1;
-   }
+      return 1; }
 
-/* Read the whole input file into memory */
+   /* Read the whole input file into memory */
 
    fseek (infile, 0, SEEK_END); /* find file size */
    buflen = ftell (infile);
@@ -1094,31 +1043,28 @@ int main (int argc, char *argv[]) {
    buffer = (unsigned char *) malloc (buflen + 1);
    if (!buffer) {
       fprintf (stderr, "Unable to allocate %ld bytes for the file\n", buflen);
-      return 1;
-   }
+      return 1; }
    fread (buffer, buflen, 1, infile);
    fclose (infile);
    if (logparse)
       fprintf (logfile, "Processing %s, %ld bytes\n", filename, buflen);
 
-/* Create the output file */
+   /* Create the output file */
 
    if (!parseonly) {
       miditones_strlcpy (filename, filebasename, MAXPATH);
       if (binaryoutput) {
          miditones_strlcat (filename, ".bin", MAXPATH);
-         outfile = fopen (filename, "wb");
-      } else {
+         outfile = fopen (filename, "wb"); }
+      else {
          miditones_strlcat (filename, ".c", MAXPATH);
-         outfile = fopen (filename, "w");
-      }
+         outfile = fopen (filename, "w"); }
       if (!outfile) {
          fprintf (stderr, "Unable to open output file %s\n", filename);
-         return 1;
-      }
+         return 1; }
       file_header.f1 = (velocityoutput ? HDR_F1_VOLUME_PRESENT : 0)
-         | (instrumentoutput ? HDR_F1_INSTRUMENTS_PRESENT : 0)
-         | (percussion_translate ? HDR_F1_PERCUSSION_PRESENT : 0);
+                       | (instrumentoutput ? HDR_F1_INSTRUMENTS_PRESENT : 0)
+                       | (percussion_translate ? HDR_F1_PERCUSSION_PRESENT : 0);
       file_header.num_tgens = num_tonegens;
       if (!binaryoutput) {      /* create header of C file that initializes score data */
          time_t rawtime;
@@ -1136,26 +1082,22 @@ int main (int argc, char *argv[]) {
             fprintf (outfile, "#include <avr/pgmspace.h>\n");
             fprintf (outfile, "#else\n");
             fprintf (outfile, "#define PROGMEM\n");
-            fprintf (outfile, "#endif\n");
-         }
+            fprintf (outfile, "#endif\n"); }
          fprintf (outfile, "const unsigned char PROGMEM score [] = {\n");
          if (do_header) {       // write the C initialization for the file header
             fprintf (outfile, "'P','t', 6, 0x%02X, 0x%02X, ", file_header.f1, file_header.f2);
             fflush (outfile);
             file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
             fprintf (outfile, "%2d, // (Playtune file header)\n", file_header.num_tgens);
-            outfile_bytecount += 6;
-         }
-      } else if (do_header) {   // write the binary file header
+            outfile_bytecount += 6; } }
+      else if (do_header) {     // write the binary file header
          int i;
          for (i = 0; i < sizeof (file_header); ++i)
             fputc (((unsigned char *) &file_header)[i], outfile);
          file_header_num_tgens_position = (char *) &file_header.num_tgens - (char *) &file_header;
-         outfile_bytecount += sizeof (file_header);
-      }
-   }
+         outfile_bytecount += sizeof (file_header); } }
 
-/* process the MIDI file header */
+   /* process the MIDI file header */
 
    hdrptr = buffer;             /* pointer to file and track headers */
    process_header ();
@@ -1163,20 +1105,21 @@ int main (int argc, char *argv[]) {
    if (num_tracks > MAX_TRACKS)
       midi_error ("Too many tracks", buffer);
 
-/* initialize processing of all the tracks */
+   /* initialize processing of all the tracks */
 
+   tempo = DEFAULT_TEMPO;
    for (tracknum = 0; tracknum < num_tracks; ++tracknum) {
+      track[tracknum].tempo = DEFAULT_TEMPO;
       start_track (tracknum);   /* process the track header */
       find_note (tracknum);     /* position to the first note on/off */
       /* if we are in "parse only" mode, do the whole track,
          so we do them one at a time instead of time-synchronized. */
       if (parseonly)
          while (track[tracknum].cmd != CMD_TRACKDONE)
-            find_note (tracknum);
-   }
+            find_note (tracknum); }
 
-/* Continue processing all tracks, in an order based on the simulated time.
-This is not unlike multiway merging used for tape sorting algoritms in the 50's! */
+   /* Continue processing all tracks, in an order based on the simulated time.
+   This is not unlike multiway merging used for tape sorting algoritms in the 50's! */
 
    tracknum = 0;
    if (!parseonly) {
@@ -1213,9 +1156,7 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
             trk = &track[tracknum];
             if (trk->cmd != CMD_TRACKDONE && trk->time < earliest_time) {
                earliest_time = trk->time;
-               earliest_tracknum = tracknum;
-            }
-         }
+               earliest_tracknum = tracknum; } }
          while (--count_tracks);
 
          tracknum = earliest_tracknum;  /* the track we picked */
@@ -1230,9 +1171,7 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
          delta_time = earliest_time - timenow;
          if (delta_time) {
             /* Convert ticks to milliseconds based on the current tempo */
-            unsigned long long temp;
-            temp = ((unsigned long long) delta_time * tempo) / ticks_per_beat;
-            delta_msec = temp / 1000;   // get around LCC compiler bug
+            delta_msec = ((unsigned long long) delta_time * tempo) / ticks_per_beat / 1000;
             if (delta_msec) { // if time delay didn't round down to zero msec
                gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
                if (loggen)
@@ -1243,13 +1182,10 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
                if (binaryoutput) {
                   putc ((unsigned char) (delta_msec >> 8), outfile);
                   putc ((unsigned char) (delta_msec & 0xff), outfile);
-                  outfile_bytecount += 2;
-               } else {
+                  outfile_bytecount += 2; }
+               else {
                   fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
-                  outfile_items (2);
-               }
-            }
-         }
+                  outfile_items (2); } } }
          timenow = earliest_time;
 
          /*  If this track event is "set tempo", just change the global tempo.
@@ -1259,8 +1195,7 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
             tempo = trk->tempo;
             if (loggen)
                fprintf (logfile, "Tempo changed to %ld usec/qnote\n", tempo);
-            find_note (tracknum);
-         }
+            find_note (tracknum); }
 
          /*  If this track event is "stop note", process it and all subsequent "stop notes" for this track
             that are happening at the same time. Doing so frees up as many tone generators as possible.  */
@@ -1278,9 +1213,7 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
                                     tg->note, tgnum, tracknum);
                         tg->stopnote_pending = true;  /* must stop the current note if another doesn't start first */
                         tg->playing = false;
-                        trk->tonegens[tgnum] = false;
-                     }
-                  }
+                        trk->tonegens[tgnum] = false; } }
                find_note (tracknum);    // use up the note
             }
             while (trk->cmd == CMD_STOPNOTE && trk->time == timenow);
@@ -1296,27 +1229,21 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
                   tg = &tonegen[trk->preferred_tonegen];
                   if (!tg->playing) {
                      tgnum = trk->preferred_tonegen;
-                     foundgen = true;
-                  }
-               }
+                     foundgen = true; } }
                /* if not, then try for a free tone generator that had been playing the same instrument we need */
                if (!foundgen)
                   for (tgnum = 0; tgnum < num_tonegens; ++tgnum) {
                      tg = &tonegen[tgnum];
                      if (!tg->playing && tg->instrument == midi_chan_instrument[trk->chan]) {
                         foundgen = true;
-                        break;
-                     }
-                  }
+                        break; } }
                /* if not, then try for any free tone generator */
                if (!foundgen)
                   for (tgnum = 0; tgnum < num_tonegens; ++tgnum) {
                      tg = &tonegen[tgnum];
                      if (!tg->playing) {
                         foundgen = true;
-                        break;
-                     }
-                  }
+                        break; } }
                if (foundgen) {
                   int shifted_note;
                   if (tgnum + 1 > num_tonegens_used)
@@ -1337,52 +1264,44 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
                      if (instrumentoutput) {    /* output a "change instrument" command */
                         if (binaryoutput) {
                            putc (CMD_INSTRUMENT | tgnum, outfile);
-                           putc (tg->instrument, outfile);
-                        } else {
+                           putc (tg->instrument, outfile); }
+                        else {
                            fprintf (outfile, "0x%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->instrument);
-                           outfile_items (2);
-                        }
-                     }
-                  }
+                           outfile_items (2); } } }
                   if (loggen)
                      fprintf (logfile,
                               "->Start note %d, generator %d, instrument %d, track %d\n",
                               trk->note, tgnum, tg->instrument, tracknum);
                   if (percussion_translate && trk->chan == PERCUSSION_TRACK) {  /* if requested, */
                      shifted_note = trk->note + 128;    // shift percussion notes up to 128..255
-                  } else {      /* shift notes as requested */
+                  }
+                  else {        /* shift notes as requested */
                      shifted_note = trk->note + keyshift;
                      if (shifted_note < 0)
                         shifted_note = 0;
                      if (shifted_note > 127)
-                        shifted_note = 127;
-                  }
+                        shifted_note = 127; }
                   if (binaryoutput) {
                      putc (CMD_PLAYNOTE | tgnum, outfile);
                      putc (shifted_note, outfile);
                      outfile_bytecount += 2;
                      if (velocityoutput) {
                         putc (trk->velocity, outfile);
-                        outfile_bytecount++;
-                     }
-                  } else {
+                        outfile_bytecount++; } }
+                  else {
                      if (velocityoutput == 0) {
                         fprintf (outfile, "0x%02X,%d, ", CMD_PLAYNOTE | tgnum, shifted_note);
-                        outfile_items (2);
-                     } else {
+                        outfile_items (2); }
+                     else {
                         fprintf (outfile, "0x%02X,%d,%d, ",
                                  CMD_PLAYNOTE | tgnum, shifted_note, trk->velocity);
-                        outfile_items (3);
-                     }
-                  }
-               } else {
+                        outfile_items (3); } } }
+               else {
                   if (loggen)
                      fprintf (logfile,
                               "----> No free generator, skipping note %d, track %d\n",
                               trk->note, tracknum);
-                  ++notes_skipped;
-               }
-            }
+                  ++notes_skipped; } }
             find_note (tracknum);       // use up the note
          }
 
@@ -1400,14 +1319,13 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
                   gen_restart ? CMD_RESTART : CMD_STOP, outfile_bytecount, num_tonegens_used,
                   num_tonegens_used == 1 ? " is" : "s are");
          if (notes_skipped)
-            fprintf (outfile, "// %d notes had to be skipped.\n", notes_skipped);
-      }
+            fprintf (outfile, "// %d notes had to be skipped.\n", notes_skipped); }
       printf ("  %s %d tone generators were used.\n",
               num_tonegens_used < num_tonegens ? "Only" : "All", num_tonegens_used);
       if (notes_skipped)
          printf
-            ("  %d notes were skipped because there weren't enough tone generators.\n",
-             notes_skipped);
+         ("  %d notes were skipped because there weren't enough tone generators.\n",
+          notes_skipped);
       printf ("  %ld bytes of score data were generated.\n", outfile_bytecount);
       if (loggen)
          fprintf (logfile, "%d note-on commands, %d instrument changes.\n",
@@ -1419,14 +1337,10 @@ This is not unlike multiway merging used for tape sorting algoritms in the 50's!
             if (binaryoutput)
                putc (num_tonegens_used, outfile);
             else
-               fprintf (outfile, "%2d", num_tonegens_used);
-         }
-      }
-      fclose (outfile);
-   } /* if (!parseonly) */
+               fprintf (outfile, "%2d", num_tonegens_used); } }
+      fclose (outfile); } /* if (!parseonly) */
 
    if (loggen || logparse)
       fclose (logfile);
    printf ("  Done.\n");
-   return 0;
-}
+   return 0; }

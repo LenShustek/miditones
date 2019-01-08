@@ -111,6 +111,10 @@
 *
 *  -pi  Ignore notes in the MIDI percussion track 9 (also called 10 by some)
 *
+*  -mx  Merge events that are within x milliseconds, to reduce the number of "delay"
+*       commands and thus make the bytestream smaller. The deficits are accumulated
+*       so that there is no loss of synchronization in the long term.
+*
 *  -dp  Generate IDE-dependent C code to define PROGMEM
 *
 *  -r   Terminate the output file with a "restart" command instead of a "stop" command.
@@ -260,7 +264,7 @@
 *       seen, this makes the bytestream 21% smaller!
 * 13 November 2017, Earle Philhower, V1.15
 *     - Allow META fields to be larger than 127 bytes.
-*  2 January 2018, Kodest, V1.16
+*  2 January 2018, Kodest, V1
 *     - Don't generate zero-length delays
 * 13 September 2018, Paul Stoffregen, V1.17
       - Fix compile errors on Linux with gcc run in default mode
@@ -270,8 +274,13 @@
       - Abandon LCC and compile under Microsoft Visual Studio 2017.
       - Reformat to condense the source code, so you see more protein and less
         syntactic sugar on each screen.
+*  4 January 2019, Len Shustek, V1.19
+      - As suggested by Chris van Marle, add the "-mx" parameter to allow timing to be
+        flexible in order to avoid small delays and thus save space in the bytestream.
+      - Don't discard fractions of a millisecond in the delay timing, to avoid gradual
+        drift of the music. This has been a minor problem since V1.0 in 2011.
 */
-#define VERSION "1.18"
+#define VERSION "1.19"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -291,9 +300,13 @@ a MIDI file is:
 
 a header_chunk is:
   "MThd" 00000006 ffff nnnn dddd
+    ffff is the format type (we have only seen 1)
+    nnnn is the number of tracks
+    dddd is the number of ticks per beat (ie, quarter note)
 
 a track_chunk is:
   "MTrk" llllllll {<deltatime> track_event}...
+    <deltatime> is the number of ticks to delay before this event
 
 a running status track_event is:
   0x to 7x: assume a missing 8n to En event code which is the same as the last MIDI-event track_event
@@ -337,8 +350,43 @@ a meta event track_event is:
   FF 58 04 nnddccbb     set time signature
   FF 59 02 sfmi         set key signature
   FF 7F <len> data      sequencer-specific data
+ --------------------------------------------------------------------------------------------*/
 
---------------------------------------------------------------------------------------------*/
+ /*--------------- processing outline  -------------------------------------------------------
+ main
+   forall trks, find_note
+   do
+      find trk with earliest_time = min(trk->time)
+      if timenow-earliest_time > minimum delay
+         gen_stopnotes
+         output: delay timenow-earliest_time
+      if CMD_TEMPO,
+         set global tempo
+         find_note
+      else if CMD_STOPNOTE 
+         do
+            tgen->stopnote_pending = true
+            find_note
+         while CMD_STOPNOTE
+      else if CMD_PLAYNOTE
+         find tgen
+         stopnote_pending = false
+         output: CMD_PLAYNOTE
+         find_note
+   while not all CMD_TRACKDONE
+   exit
+find_note
+   do forever
+      t->time = varlen
+      if "note off", CMD_STOPNOTE, return
+      if "note on", CMD_PLAYNOTE, return
+      if "tempo", CMD_TEMPO, return
+      if end of track, CMD_TRACKDONE, return
+ gen_stopnotes
+   forall tgen
+      if stopnote_pending, 
+         output: CMD_STOPNOTE, stopnote_pending = false
+ --------------------------------------------------------------------------------------------*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -388,8 +436,12 @@ unsigned channel_mask = 0xffff; // bit mask of channels to process
 int keyshift = 0;               // optional chromatic note shift for output file
 long int outfile_bytecount = 0;
 unsigned int ticks_per_beat = 240;
-unsigned long timenow = 0;
-unsigned long tempo;            /* current tempo in usec/qnote */
+unsigned long timenow = 0;      // time now, in ticks
+unsigned long tempo;            // current global tempo in usec/beat
+unsigned long long songtime_usec = 0;
+int tempo_changes = 0;          // how many times we changed the global tempo
+unsigned closetime_msec = 0;    // how close, in msec, events should be before they are merged
+long int delays_saved = 0;      // how many delays were saved because of non-zero merge time
 
 struct tonegen_status {         /* current status of a tone generator */
    bool playing;                /* is it playing? */
@@ -404,8 +456,9 @@ struct tonegen_status {         /* current status of a tone generator */
 struct track_status {           /* current processing point of a MIDI track */
    uint8_t *trkptr;             /* ptr to the next note change */
    uint8_t *trkend;             /* ptr past the end of the track */
-   unsigned long time;          /* what time we're at in the score */
-   unsigned long tempo;         /* the tempo last set, in usec per qnote */
+   unsigned long time;          /* what time we're at in the score, in ticks */
+   unsigned long deficit_usec;  /* how much behind we are, in usec */
+   unsigned long tempo;         /* the tempo last set, in usec per beat */
    unsigned int preferred_tonegen; /* for strategy2, try to use this generator */
    unsigned char cmd;           /* CMD_xxxx next to do */
    unsigned char note;          /* for which note */
@@ -482,6 +535,7 @@ void SayUsage (char *programName) {
       "  -cn  mask for which tracks to process, e.g. -c3 for only 0 and 1",
       "  -kn  key shift in chromatic notes, positive or negative",
       "  -pi  ignore notes in the percussion track (9)",
+      "  -mx  merge events that are within x msec, to save bytestream space",
       "  -dp  define PROGMEM in output C code",
       "  -r   terminate output file with \"restart\" instead of \"stop\" command",
       NULL };
@@ -505,97 +559,78 @@ int HandleOptions (int argc, char *argv[]) {
             SayUsage (argv[0]);
             exit (1);
          case 'L':
-            if (toupper (argv[i][2]) == 'G')
-               loggen = true;
-            else if (toupper (argv[i][2]) == 'P')
-               logparse = true;
-            else
-               goto opterror;
-            if (argv[i][3] != '\0')
-               goto opterror;
+            if (toupper (argv[i][2]) == 'G') loggen = true;
+            else if (toupper (argv[i][2]) == 'P') logparse = true;
+            else goto opterror;
+            if (argv[i][3] != '\0') goto opterror;
             break;
          case 'P':
             if (argv[i][2] == '\0') {
                parseonly = true;
                break; }
-            else if (toupper (argv[i][2]) == 'I')
-               percussion_ignore = true;
-            else if (toupper (argv[i][2]) == 'T')
-               percussion_translate = true;
-            else
-               goto opterror;
-            if (argv[i][3] != '\0')
-               goto opterror;
+            else if (toupper (argv[i][2]) == 'I') percussion_ignore = true;
+            else if (toupper (argv[i][2]) == 'T') percussion_translate = true;
+            else goto opterror;
+            if (argv[i][3] != '\0') goto opterror;
             break;
          case 'B':
             binaryoutput = true;
-            if (argv[i][2] != '\0')
-               goto opterror;
+            if (argv[i][2] != '\0') goto opterror;
             break;
          case 'V':
             velocityoutput = true;
-            if (argv[i][2] != '\0')
-               goto opterror;
+            if (argv[i][2] != '\0') goto opterror;
             break;
          case 'I':
             instrumentoutput = true;
-            if (argv[i][2] != '\0')
-               goto opterror;
+            if (argv[i][2] != '\0') goto opterror;
             break;
          case 'S':
-            if (argv[i][2] == '1')
-               strategy1 = true;
-            else if (argv[i][2] == '2')
-               strategy2 = true;
-            else
-               goto opterror;
-            if (argv[i][3] != '\0')
-               goto opterror;
+            if (argv[i][2] == '1') strategy1 = true;
+            else if (argv[i][2] == '2') strategy2 = true;
+            else goto opterror;
+            if (argv[i][3] != '\0') goto opterror;
             break;
          case 'T':
             if (sscanf (&argv[i][2], "%d%n", &num_tonegens, &nch) != 1
                   || num_tonegens < 1 || num_tonegens > MAX_TONEGENS)
                goto opterror;
             printf ("Using %d tone generators.\n", num_tonegens);
-            if (argv[i][2 + nch] != '\0')
-               goto opterror;
+            if (argv[i][2 + nch] != '\0') goto opterror;
             break;
          case 'N':
             if (sscanf (&argv[i][2], "%d%n", &outfile_maxitems, &nch) != 1 || outfile_maxitems < 1)
                goto opterror;
-            if (argv[i][2 + nch] != '\0')
-               goto opterror;
+            if (argv[i][2 + nch] != '\0') goto opterror;
+            break;
+         case 'M':
+            if (sscanf(&argv[i][2], "%d%n", &closetime_msec, &nch) != 1) goto opterror;
+            if (argv[i][2 + nch] != '\0') goto opterror;
             break;
          case 'C':
             if (sscanf (&argv[i][2], "%i%n", &channel_mask, &nch) != 1 || channel_mask > 0xffff)
                goto opterror;
             printf ("Channel (track) mask is %04X.\n", channel_mask);
-            if (argv[i][2 + nch] != '\0')
-               goto opterror;
+            if (argv[i][2 + nch] != '\0') goto opterror;
             break;
          case 'K':
             if (sscanf (&argv[i][2], "%d%n", &keyshift, &nch) != 1 || keyshift < -100
                   || keyshift > 100)
                goto opterror;
             printf ("Using keyshift %d.\n", keyshift);
-            if (argv[i][2 + nch] != '\0')
-               goto opterror;
+            if (argv[i][2 + nch] != '\0') goto opterror;
             break;
          case 'D':
             if (argv[i][2] == '\0') {
                do_header = true;
                break; }
-            if (toupper (argv[i][2]) == 'P')
-               define_progmem = true;
-            else
-               goto opterror;
-            if (argv[i][3] != '\0')
-               goto opterror;
+            if (toupper (argv[i][2]) == 'P') define_progmem = true;
+            else goto opterror;
+            if (argv[i][3] != '\0') goto opterror;
             break;
          case 'R':
             gen_restart = true;
-            if (argv[i][2] != '\0')
-               goto opterror;
+            if (argv[i][2] != '\0') goto opterror;
             break;
             /* add more  option switches here */
 opterror:
@@ -608,12 +643,12 @@ opterror:
          break; } }
    return firstnonoption; }
 
-void print_command_line (int argc, char *argv[]) {
+void print_command_line (FILE *file, int argc, char *argv[]) {
    int i;
-   fprintf (outfile, "// command line: ");
+   fprintf (file, "// command line: ");
    for (i = 0; i < argc; i++)
-      fprintf (outfile, "%s ", argv[i]);
-   fprintf (outfile, "\n"); }
+      fprintf (file, "%s ", argv[i]);
+   fprintf (file, "\n"); }
 
 
 /****************  utility routines  **********************/
@@ -632,30 +667,25 @@ size_t miditones_strlcpy (char *dst, const char *src, size_t siz) {
    /* Copy as many bytes as will fit */
    if (n != 0) {
       while (--n != 0) {
-         if ((*d++ = *s++) == '\0')
-            break; } }
+         if ((*d++ = *s++) == '\0') break; } }
    /* Not enough room in dst, add NUL and traverse rest of src */
    if (n == 0) {
-      if (siz != 0)
-         *d = '\0';             /* NUL-terminate dst */
-      while (*s++); }
+      if (siz != 0) *d = '\0';  /* NUL-terminate dst */
+      while (*s++) ; }
    return (s - src - 1);        /* count does not include NUL */
 }
 
 /* safe string concatenation */
-
 size_t miditones_strlcat (char *dst, const char *src, size_t siz) {
    char *d = dst;
    const char *s = src;
    size_t n = siz;
    size_t dlen;
    /* Find the end of dst and adjust bytes left but don't go past end */
-   while (n-- != 0 && *d != '\0')
-      d++;
+   while (n-- != 0 && *d != '\0') d++;
    dlen = d - dst;
    n = siz - dlen;
-   if (n == 0)
-      return (dlen + strlength (s));
+   if (n == 0) return (dlen + strlength (s));
    while (*s != '\0') {
       if (n != 1) {
          *d++ = *s;
@@ -666,7 +696,6 @@ size_t miditones_strlcat (char *dst, const char *src, size_t siz) {
 }
 
 /* match a constant character sequence */
-
 int charcmp (const char *buf, const char *match) {
    int len, i;
    len = strlength (match);
@@ -1024,7 +1053,8 @@ int main (int argc, char *argv[]) {
       if (!logfile) {
          fprintf (stderr, "Unable to open log file %s\n", filename);
          return 1; }
-      fprintf (logfile, "MIDITONES V%s log file\n", VERSION); }
+      fprintf (logfile, "MIDITONES V%s log file\n", VERSION);
+      print_command_line(logfile, argc, argv); }
 
    /* Open the input file */
 
@@ -1072,7 +1102,7 @@ int main (int argc, char *argv[]) {
          fprintf (outfile, "// Playtune bytestream for file \"%s.mid\" ", filebasename);
          fprintf (outfile, "created by MIDITONES V%s on %s", VERSION,
                   asctime (localtime (&rawtime)));
-         print_command_line (argc, argv);
+         print_command_line (outfile, argc, argv);
          if (channel_mask != 0xffff)
             fprintf (outfile, "//   Only the masked channels were processed: %04X\n", channel_mask);
          if (keyshift != 0)
@@ -1128,7 +1158,7 @@ int main (int argc, char *argv[]) {
          struct tonegen_status *tg;
          int tgnum;
          int count_tracks;
-         unsigned long delta_time, delta_msec;
+         unsigned long delta_ticks, delta_msec;
 
          /* Find the track with the earliest event time,
             and output a delay command if time has advanced.
@@ -1151,8 +1181,7 @@ int main (int argc, char *argv[]) {
          if (strategy1)
             tracknum = num_tracks;      /* beyond the end, so we start with track 0 */
          do {
-            if (++tracknum >= num_tracks)
-               tracknum = 0;
+            if (++tracknum >= num_tracks) tracknum = 0;
             trk = &track[tracknum];
             if (trk->cmd != CMD_TRACKDONE && trk->time < earliest_time) {
                earliest_time = trk->time;
@@ -1166,18 +1195,25 @@ int main (int argc, char *argv[]) {
          if (earliest_time < timenow)
             midi_error ("INTERNAL: time went backwards", trk->trkptr);
 
-         /* If time has advanced, output a "delay" command */
+         /* If time has advanced, maybe output a "delay" command */
 
-         delta_time = earliest_time - timenow;
-         if (delta_time) {
-            /* Convert ticks to milliseconds based on the current tempo */
-            delta_msec = ((unsigned long long) delta_time * tempo) / ticks_per_beat / 1000;
-            if (delta_msec) { // if time delay didn't round down to zero msec
-               gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
-               if (loggen)
-                  fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_time);
-               if (delta_msec > 0x7fff)
-                  midi_error ("INTERNAL: time delta too big", trk->trkptr);
+         delta_ticks = earliest_time - timenow;
+         unsigned long delta_usec = ((unsigned long long) delta_ticks * tempo) / ticks_per_beat;
+         songtime_usec += delta_usec;
+         // We round up closetime_ticks, because otherwise the default tempo of 500,000 usec/beat with
+         // the default 480 ticks/beat results in 1.04166 msec/tick, so -m1 doesn't work as expected.
+         unsigned long closetime_ticks = (((unsigned long)closetime_msec * 1000 + 500) * ticks_per_beat) / tempo;
+         unsigned long deficit_ticks = (trk->deficit_usec * ticks_per_beat) / tempo;
+         // Generate a delay only if it is larger than the specified "merge if closer than x msec" time.
+         // But we accumulate the deficit for each track so that we eventually catch up.
+         if (delta_ticks + deficit_ticks > closetime_ticks) { // yes, we should generate a delay
+            gen_stopnotes(); /* first check if any tone generators have "stop note" commands pending */
+            delta_usec += trk->deficit_usec; // include any previously accumulated deficit
+            delta_msec = delta_usec / 1000;  // the integral number of milliseconds
+            trk->deficit_usec = delta_usec % 1000; // save the fraction of a milliscond as the new deficit
+            if (delta_msec) { // really do it if the delay didn't round down to zero msec
+               if (loggen) fprintf (logfile, "->Delay %ld msec (%ld ticks)\n", delta_msec, delta_ticks);
+               if (delta_msec > 0x7fff) midi_error ("INTERNAL: time delta too big", trk->trkptr);
                /* output a 15-bit delay in big-endian format */
                if (binaryoutput) {
                   putc ((unsigned char) (delta_msec >> 8), outfile);
@@ -1186,15 +1222,19 @@ int main (int argc, char *argv[]) {
                else {
                   fprintf (outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
                   outfile_items (2); } } }
+         else if (delta_usec) {
+            trk->deficit_usec += delta_usec; // accumulate time for delays we skip
+            ++delays_saved; }
          timenow = earliest_time;
 
          /*  If this track event is "set tempo", just change the global tempo.
             That affects how we generate "delay" commands. */
 
          if (trk->cmd == CMD_TEMPO) {
+            if (tempo != trk->tempo) ++tempo_changes;
             tempo = trk->tempo;
             if (loggen)
-               fprintf (logfile, "Tempo changed to %ld usec/qnote\n", tempo);
+               fprintf (logfile, "Tempo set to %ld usec/qnote\n", tempo);
             find_note (tracknum); }
 
          /*  If this track event is "stop note", process it and all subsequent "stop notes" for this track
@@ -1277,10 +1317,8 @@ int main (int argc, char *argv[]) {
                   }
                   else {        /* shift notes as requested */
                      shifted_note = trk->note + keyshift;
-                     if (shifted_note < 0)
-                        shifted_note = 0;
-                     if (shifted_note > 127)
-                        shifted_note = 127; }
+                     if (shifted_note < 0) shifted_note = 0;
+                     if (shifted_note > 127) shifted_note = 127; }
                   if (binaryoutput) {
                      putc (CMD_PLAYNOTE | tgnum, outfile);
                      putc (shifted_note, outfile);
@@ -1293,13 +1331,11 @@ int main (int argc, char *argv[]) {
                         fprintf (outfile, "0x%02X,%d, ", CMD_PLAYNOTE | tgnum, shifted_note);
                         outfile_items (2); }
                      else {
-                        fprintf (outfile, "0x%02X,%d,%d, ",
-                                 CMD_PLAYNOTE | tgnum, shifted_note, trk->velocity);
+                        fprintf (outfile, "0x%02X,%d,%d, ", CMD_PLAYNOTE | tgnum, shifted_note, trk->velocity);
                         outfile_items (3); } } }
                else {
                   if (loggen)
-                     fprintf (logfile,
-                              "----> No free generator, skipping note %d, track %d\n",
+                     fprintf (logfile, "----> No free generator, skipping note %d, track %d\n",
                               trk->note, tracknum);
                   ++notes_skipped; } }
             find_note (tracknum);       // use up the note
@@ -1323,10 +1359,14 @@ int main (int argc, char *argv[]) {
       printf ("  %s %d tone generators were used.\n",
               num_tonegens_used < num_tonegens ? "Only" : "All", num_tonegens_used);
       if (notes_skipped)
-         printf
-         ("  %d notes were skipped because there weren't enough tone generators.\n",
-          notes_skipped);
-      printf ("  %ld bytes of score data were generated.\n", outfile_bytecount);
+         printf ("  %d notes were skipped because there weren't enough tone generators.\n",
+                 notes_skipped);
+      printf ("  %ld bytes of score data were generated, ", outfile_bytecount);
+      printf("representing %u.%03u seconds of music with %d tempo changes\n",
+             (unsigned)(songtime_usec / 1000000), (unsigned)(songtime_usec/1000 % 1000), tempo_changes);
+      if (closetime_msec)
+         printf ("  %ld delays were removed because events within %u msec were merged\n",
+                 delays_saved, closetime_msec);
       if (loggen)
          fprintf (logfile, "%d note-on commands, %d instrument changes.\n",
                   note_on_commands, instrument_changes);

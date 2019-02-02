@@ -534,6 +534,7 @@ output queue entries at the oldest time
 #include <stdbool.h>
 #include <time.h>
 #include <inttypes.h>
+#include <limits.h>
 typedef unsigned char byte;
 typedef uint32_t timestamp;  // see note about this in the queuing routines
 

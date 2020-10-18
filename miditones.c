@@ -95,6 +95,9 @@
   The <basefilename> is the base name, without an extension, for the input and
   output files. It can contain directory path information, or not.
 
+  If the user specifies the full .mid filename, the .mid or .MID extension
+  will be dropped and the remaining name will be used as <basefilename>.
+
   The input file is <basefilename>.mid, and the output filename(s)
   are the base file name with .c, .h, .bin, and/or .log extensions.
 
@@ -347,7 +350,7 @@
       flexible in order to avoid small delays and thus save space in the bytestream.
      -Don't discard fractions of a millisecond in the delay timing, to avoid gradual
       drift of the music. This has been a minor problem since V1.0 in 2011.
- 4 January 2019, Len Shustek, V2.00
+ 4 January 2019, Len Shustek, V2.0
      -Major revision: completely rewrite score processing to allow out-of-order event
       queuing. That lets us implement "release" time that ends notes early, and
       "sustain" time at reduced volume, if we are encoding volume. You can sometimes
@@ -360,6 +363,10 @@
      -Simplify and generalize option parsing, and rename some of the newer ones.
      -Add -scorename so multiple scores can be directly #included into .ino files
       without manually editing the names.
+ 17 October 2020, Ben Combee, V2.1
+     -Let user supply full filename to MIDI file on command line to be friendlier
+      to users using shell autocompletion. If a .mid or .MID file is provided,
+      the extension will be dropped to generate the base filename.
 
 future version ideas
 
@@ -375,7 +382,7 @@ future version ideas
         channel 8 // organ
             options -attacktime=1000 -sustainlevel=80% -releasetime=100 -notemin=200
 */
-#define VERSION "2.00"
+#define VERSION "2.1"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -1531,10 +1538,11 @@ void process_track_data(void) {
 int main (int argc, char *argv[]) {
    int argno;
    char *filebasename;
+   int basenamelen;
 #define MAXPATH 120
    char filename[MAXPATH];
 
-   printf ("MIDITONES V%s, (C) 2011-2019 Len Shustek\n", VERSION);
+   printf ("MIDITONES V%s, (C) 2011-2020 Len Shustek\n", VERSION);
    if (argc == 1) {     // no arguments
       SayUsage (argv[0]);
       return 1; }
@@ -1545,6 +1553,14 @@ int main (int argc, char *argv[]) {
       SayUsage (argv[0]);
       exit (4); }
    filebasename = argv[argno];
+
+   // strip off trailing .mid or .MID extension if provided by user
+   basenamelen = strlength(filebasename);
+   if (basenamelen > 4 &&
+      (charcmp (filebasename + basenamelen - 4, ".mid") ||
+       charcmp (filebasename + basenamelen - 4, ".MID"))) {
+      filebasename[basenamelen - 4] = 0;
+   }
 
    if (logparse || loggen) { // open the log file
       miditones_strlcpy (filename, filebasename, MAXPATH);

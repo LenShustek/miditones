@@ -53,7 +53,7 @@
 *
 *----------------------------------------------------------------------------------------
 * The MIT License (MIT)
-* Copyright (c) 2011,2013,2015,2016,2019, Len Shustek
+* Copyright (c) 2011,2013,2015,2016,2019,2021 Len Shustek
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -109,9 +109,12 @@
 *     - Write the output to <basefilename>.txt, if not -c
 *     - Decode the header flags
 *     - Reformat to condense the code
+* 23 April 2021, L. Shustek, V1.9
+*     - show a summary at the end of what instruments were used and how many times
+*     - show the lowest and highest volume used
 */
 
-#define VERSION "1.8"
+#define VERSION "1.9"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -150,6 +153,7 @@ bool codeoutput = false;
 bool expect_volume = false;
 bool ignore_volume = false;
 bool showhex = false;
+unsigned max_vol = 0, min_vol = 255;
 
 struct file_hdr_t {             /* what the optional file header looks like */
    char id1;                    // 'P'
@@ -216,6 +220,7 @@ static char *instrumentname[128] = {    /* maximum 6 characters */
    "Sitar ", "Banjo ", "Shamis", "Koto  ", "Kalimb", "Bagpip", "Fiddle", "Shanai",
    "TnkBel", "Agogo ", "StDrum", "WdBlok", "TaiDrm", "MelTom", "SynDrm", "RevCym",
    "GuitFr", "Breath", "Seashr", "BirdTw", "Phone ", "Copter", "Claps ", "Guns   " };
+int instrument_count[128] = { 0 };
 
 
 /**************  command-line processing  *******************/
@@ -450,8 +455,7 @@ int main (int argc, char *argv[]) {
       for (int i = 0; i < argc; i++) fprintf(outfile, "%s ", argv[i]);
       fprintf(outfile, "\n");
       fprintf(outfile, "reading %s.bin with %ld bytes\n", filebasename, buflen);
-      if (num_tonegens < MAX_TONEGENS) fprintf(outfile, "displaying only %d tone generators.\n", num_tonegens);
-   }
+      if (num_tonegens < MAX_TONEGENS) fprintf(outfile, "displaying only %d tone generators.\n", num_tonegens); }
    else {
       fprintf (outfile, "// Playtune bytestream for file \"%s.bin\"", filebasename);
       fprintf (outfile, " created by MIDITONES_SCROLL V%s on %s\n", VERSION,
@@ -513,11 +517,14 @@ int main (int argc, char *argv[]) {
          if (cmd == 0x90) {     /*  note on  */
             gen_note[gen] = *++bufptr;  // note number
             tonegens_used |= 1 << gen;  // record that we used this generator at least once
+            ++instrument_count[gen_instrument[gen]]; // count a use of this instrument
             if (gen_did_stopnote[gen]) { // unnecesary stop note
                ++stopnotes_before_startnote;
                warning = true; }
-            if (expect_volume)
-               gen_volume[gen] = *++bufptr;     // volume
+            if (expect_volume) {
+               unsigned volume = gen_volume[gen] = *++bufptr;     // volume
+               if (volume > max_vol) max_vol = volume;
+               if (volume < min_vol) min_vol = volume; }
             if (gen >= num_tonegens) ++notes_skipped; // won't be displaying this note
          }
          else if (cmd == 0x80) {        /*  note off  */
@@ -555,4 +562,10 @@ int main (int argc, char *argv[]) {
    fprintf (infofile, "%u stopnote commands were unnecessary.\n", stopnotes_before_startnote);
    fprintf (infofile, "%u consecutive delays could have been merged.\n", consecutive_delays);
    if (stopnotes_before_startnote + consecutive_delays > 0) fprintf (infofile, "(Those locations are marked with \"!\")\n");
+   fprintf(infofile, "instruments used:\n");
+   for (int i = 0; i < 128; ++i)
+      if (instrument_count[i]) {
+         fprintf(infofile, " %s (%3d, 0x%02X) %7d\n", instrumentname[i], i, i, instrument_count[i]); }
+   if (expect_volume)
+      fprintf(infofile, "volume ranged from %d to %d\n", min_vol, max_vol);
    printf ("Done.\n"); }

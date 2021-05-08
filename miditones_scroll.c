@@ -43,12 +43,15 @@
 *
 *    -x   Show notes in hex instead of as octave-noteletter-sharp
 *
+*    -n   Don't show the bytestream data. (Ignored if -c is specified.)
+*
 *  For source code to this and related programs, see
 *    www.github.com/LenShustek/miditones
 *    www.github.com/LenShustek/arduino-playtune
 *    www.github.com/LenShustek/Playtune_poll
 *    www.github.com/LenShustek/Playtune_poll
 *    www.github.com/LenShustek/Playtune_synth
+*    www.github.com/LenShustek/Playtune_Teensy
 *    www.github.com/LenShustek/ATtiny-playtune
 *
 *----------------------------------------------------------------------------------------
@@ -112,9 +115,12 @@
 * 23 April 2021, L. Shustek, V1.9
 *     - show a summary at the end of what instruments were used and how many times
 *     - show the lowest and highest volume used
+* 5 May 2021, L. Shustek, V1.10
+*     - add -n option to not print the bytestream data
+*     - don't show instrument summary if instrument data wasn't in the bytestream
 */
 
-#define VERSION "1.9"
+#define VERSION "1.10"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,6 +159,8 @@ bool codeoutput = false;
 bool expect_volume = false;
 bool ignore_volume = false;
 bool showhex = false;
+bool showbytestream = true;
+bool got_instruments = false;
 unsigned max_vol = 0, min_vol = 255;
 
 struct file_hdr_t {             /* what the optional file header looks like */
@@ -235,6 +243,7 @@ void SayUsage (char *programName) {
       " -vi expects and ignores volume information",
       " -c  creates an annotated C source file as <basefile>.c",
       " -x  show notes in hex instead of octave/note",
+      " -n  don't show the bytestream data",
       "" };
    int i = 0;
    while (usage[i][0] != '\0')
@@ -259,6 +268,9 @@ int HandleOptions (int argc, char *argv[]) {
             break;
          case 'X':
             showhex = true;
+            break;
+         case 'N':
+            showbytestream = false;
             break;
          case 'T':
             if (sscanf (&argv[i][2], "%d", &num_tonegens) != 1 || num_tonegens < 1
@@ -383,12 +395,13 @@ void print_status (void) {
          else
             fprintf (outfile, " v%-3d", gen_volume[gen]); }
    // display the hex commands that created these changes
-   fprintf (outfile, "%3u.%03u %c%04X: ", delay/1000, delay%1000, warning ? '!' : ' ', (unsigned int) (lastbufptr - buffer));
+   fprintf (outfile, "%3u.%03u %c", delay/1000, delay%1000, warning ? '!' : ' ');
+   if (showbytestream) fprintf (outfile, "%04X: ", (unsigned int) (lastbufptr - buffer));
    warning = false;
    if (codeoutput)
       fprintf (outfile, "*/ "); // end comment
-   for (; lastbufptr <= bufptr; ++lastbufptr)
-      fprintf (outfile, codeoutput ? "0x%02X," : "%02X ", *lastbufptr);
+   if (showbytestream) for (; lastbufptr <= bufptr; ++lastbufptr)
+         fprintf (outfile, codeoutput ? "0x%02X," : "%02X ", *lastbufptr);
    fprintf (outfile, "\n");
    lastbufptr = bufptr + 1; }
 
@@ -413,6 +426,7 @@ int main (int argc, char *argv[]) {
       return 1; }
 
    argno = HandleOptions (argc, argv);   /* process options */
+   if (codeoutput) showbytestream = true;
    filebasename = argv[argno];
 
    strlcpy (filename, filebasename, MAXPATH);   // Open the input file
@@ -487,7 +501,9 @@ int main (int argc, char *argv[]) {
    fprintf (outfile, "       time   ");
    for (unsigned i = 0; i < num_tonegens; ++i)
       fprintf (outfile, expect_volume && !ignore_volume ? "   gen%-5d" : " gen%-2d", i);
-   fprintf (outfile, "delay  addr  bytestream code\n\n");
+   fprintf(outfile, "delay");
+   if (showbytestream) fprintf(outfile, "  addr  bytestream code");
+   fprintf(outfile, "\n\n");
    for (gen = 0; gen < num_tonegens; ++gen)
       gen_note[gen] = SILENT;
 
@@ -533,6 +549,7 @@ int main (int argc, char *argv[]) {
             gen_note[gen] = SILENT;
             gen_did_stopnote[gen] = true; }
          else if (cmd == 0xc0) {        /* change instrument */
+            got_instruments = true;
             gen_instrument[gen] = *++bufptr & 0x7f;
             gen_instrument_changed[gen] = true; }
          else {
@@ -562,10 +579,11 @@ int main (int argc, char *argv[]) {
    fprintf (infofile, "%u stopnote commands were unnecessary.\n", stopnotes_before_startnote);
    fprintf (infofile, "%u consecutive delays could have been merged.\n", consecutive_delays);
    if (stopnotes_before_startnote + consecutive_delays > 0) fprintf (infofile, "(Those locations are marked with \"!\")\n");
-   fprintf(infofile, "instruments used:\n");
-   for (int i = 0; i < 128; ++i)
-      if (instrument_count[i]) {
-         fprintf(infofile, " %s (%3d, 0x%02X) %7d\n", instrumentname[i], i, i, instrument_count[i]); }
+   if (got_instruments) {
+      fprintf(infofile, "instruments used:\n");
+      for (int i = 0; i < 128; ++i)
+         if (instrument_count[i]) {
+            fprintf(infofile, " %s (%3d, 0x%02X) %7d\n", instrumentname[i], i, i, instrument_count[i]); } }
    if (expect_volume)
       fprintf(infofile, "volume ranged from %d to %d\n", min_vol, max_vol);
    printf ("Done.\n"); }

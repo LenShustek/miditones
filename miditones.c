@@ -1097,7 +1097,7 @@ void remove_queue_entry(int ndx) { // remove the oldest queue entry
                      fprintf(outfile, "%3d", tg->note.instrument);
                      outfile_items(1); }     
                else {
-                  fprintf(outfile, "$%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->note.instrument);
+                  fprintf(outfile, "0x%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->note.instrument);
                   outfile_items(2); } } }
          if (loggen) fprintf(logfile, "      play tgen %d %s\n", tgnum, describe(&q->note));
          tg->playing = true;

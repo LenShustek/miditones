@@ -718,6 +718,7 @@ void SayUsage(char *programName) {
       "  -pt   translate notes in the percussion track to notes 129 to 255",
       "  -d    include a self-describing file header",
       "  -b    generate a binary file output instead of C source code",
+      "  -a    generate an assembly file output instead of C source code",
       "  -t=n  use at most n tone generators (default is 6, max is 16)",
       "",
       "  The best options for later Playtune music players are: -v -i -pt -d",

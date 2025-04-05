@@ -136,6 +136,9 @@
   -b    Generate a binary file with the name <basefilename>.bin, instead of a
         C-language source file with the name <basefilename>.c.
 
+  -a    Generate an assembly source file with the name <basefilename>.asm, instead of a
+        C-language source file with the name <basefilename>.c.
+
   -t=n  Generate the bytestream so that at most "n" tone generators are used.
         The default is 6 tone generators, and the maximum is 16. The program
         will report how many notes had to be discarded because there weren't

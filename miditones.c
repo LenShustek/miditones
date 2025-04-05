@@ -601,7 +601,8 @@ struct track_header {
 
 bool loggen, logparse, parseonly, strategy1, strategy2, binaryoutput, define_progmem,
      volume_output, instrumentoutput, percussion_ignore, percussion_translate, do_header,
-     gen_restart, scorename, showskipped, noduplicates;
+     // grw 04/05/2025 - add assembly output option
+     gen_restart, scorename, showskipped, noduplicates, asm_output;          
 FILE *infile, *outfile, *logfile;
 uint8_t *buffer, *hdrptr;
 unsigned long buflen;
@@ -757,6 +758,11 @@ int HandleOptions (int argc, char *argv[]) {
          if (opt_key(arg, "h") || opt_key(arg, "?")) {
             SayUsage(argv[0]); exit(1); }
          else if (opt_key(arg, "b")) binaryoutput = true;
+         // grw 04/05/2025 - add assembly output
+         else if (opt_key(arg, "a")) {
+           asm_output = true;
+           // grw 04/05/2025 - 16 bytes per line
+           outfile_maxitems = 16; }
          else if (opt_int(arg, "c", &channel_mask, 1, 0xffff))
             printf("Channel (track) mask is %04X\n", channel_mask);
          else if (opt_key(arg, "d")) do_header = true;
@@ -891,7 +897,15 @@ and generate a newline every so often. */
 void outfile_items (int n) {
    outfile_bytecount += n;
    outfile_itemcount += n;
-   if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
+   // grw 04/05/2025  - add assembly output option 
+   if (asm_output) {
+      // grw 04/05/2025 - start byte data definition on new line
+      if (outfile_itemcount >= outfile_maxitems) {
+         fprintf (outfile, "\n    db  "); 
+         outfile_itemcount = 0; }
+      else {
+         fprintf (outfile, ", "); } }   
+   else if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
       fprintf (outfile, "\n");
       outfile_itemcount = 0; } }
 
@@ -1076,8 +1090,14 @@ void remove_queue_entry(int ndx) { // remove the oldest queue entry
                   putc(CMD_INSTRUMENT | tgnum, outfile);
                   putc(tg->note.instrument, outfile);
                   outfile_bytecount += 2; }
+               // grw 04/05/2025  - add assembly output option
+               else if (asm_output) {
+                     fprintf(outfile, "$%02X", CMD_INSTRUMENT | tgnum);
+                     outfile_items(1);
+                     fprintf(outfile, "%3d", tg->note.instrument);
+                     outfile_items(1); }     
                else {
-                  fprintf(outfile, "0x%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->note.instrument);
+                  fprintf(outfile, "$%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->note.instrument);
                   outfile_items(2); } } }
          if (loggen) fprintf(logfile, "      play tgen %d %s\n", tgnum, describe(&q->note));
          tg->playing = true;
@@ -1093,7 +1113,21 @@ void remove_queue_entry(int ndx) { // remove the oldest queue entry
             if (volume_output) {
                putc(tg->note.volume, outfile);
                outfile_bytecount +=1; } }
-         else {
+         // grw 04/05/2025  - add assembly output option       
+         else if (asm_output) {
+           if (volume_output == 0) {
+              fprintf(outfile, "$%02X", CMD_PLAYNOTE | tgnum);
+              outfile_items(1);
+              fprintf(outfile, "%3d", tg->note.note);
+              outfile_items(1); }
+           else {
+              fprintf(outfile, "$%02X", CMD_PLAYNOTE | tgnum);
+              outfile_items(1);
+              fprintf(outfile, "%3d", tg->note.note);
+              outfile_items(1);
+              fprintf(outfile, "%3d", tg->note.volume);
+              outfile_items(1); } }
+          else {
             if (volume_output == 0) {
                fprintf(outfile, "0x%02X,%d, ", CMD_PLAYNOTE | tgnum, tg->note.note);
                outfile_items(2); }
@@ -1117,6 +1151,12 @@ void generate_delay(unsigned long delta_msec) { // output a delay command
          putc((byte)(delta_msec >> 8), outfile);
          putc((byte)(delta_msec & 0xff), outfile);
          outfile_bytecount += 2; }
+      // grw 04/05/2025  - add assembly output option   
+      else if (asm_output) {
+        fprintf(outfile, "$%02X", (byte)(delta_msec >> 8));
+        outfile_items(1);
+        fprintf(outfile, "$%02X", (byte)(delta_msec & 0xff));
+        outfile_items(1); }   
       else {
          fprintf(outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
          outfile_items(2); } } }
@@ -1155,6 +1195,9 @@ void pull_queue(void) {
          if (binaryoutput) {
             putc(CMD_STOPNOTE | tgnum, outfile);
             outfile_bytecount += 1; }
+         else if (asm_output){
+            fprintf(outfile, "$%02X", CMD_STOPNOTE | tgnum);
+            outfile_items(1); }    
          else {
             fprintf(outfile, "0x%02X, ", CMD_STOPNOTE | tgnum);
             outfile_items(1); }
@@ -1621,6 +1664,12 @@ void process_track_data(void) {
    if (binaryoutput) {
       putc(gen_restart ? CMD_RESTART : CMD_STOP, outfile);
       outfile_bytecount +=1; }
+  // grw 04/05/2025  - add assembly output option     
+   else if (asm_output) {
+      fprintf(outfile, "$%02X\n", gen_restart ? CMD_RESTART : CMD_STOP);
+      // grw 04/05/2025 - don't call outfile_iteme to print comma after last byte definition
+      outfile_bytecount += 1; 
+      outfile_itemcount = 0;}
    else {
       fprintf(outfile, "0x%02X};", gen_restart ? CMD_RESTART : CMD_STOP);
       outfile_items(1);
@@ -1695,6 +1744,9 @@ int main (int argc, char *argv[]) {
       if (binaryoutput) {
          miditones_strlcat (filename, ".bin", MAXPATH);
          outfile = fopen (filename, "wb"); }
+      else if (asm_output){
+         miditones_strlcat (filename,  scorename ? ".inc" : ".asm", MAXPATH);
+         outfile = fopen (filename, "w"); }   
       else {
          miditones_strlcat (filename,  scorename ? ".h" : ".c", MAXPATH);
          outfile = fopen (filename, "w"); }
@@ -1708,14 +1760,40 @@ int main (int argc, char *argv[]) {
       if (!binaryoutput) {      /* create header of C file that initializes score data */
          time_t rawtime;
          time (&rawtime);
+         // grw 04/05/2025  - add assembly output option 
+         if (asm_output) {
+            fprintf (outfile, "; Playtune bytestream for file \"%s.mid\" ", filebasename);
+            fprintf (outfile, "created by MIDITONES V%s on %s", VERSION,
+                     asctime (localtime (&rawtime)));
+            // grw 04/05/2025 - don't call print_command_line (outfile, argc, argv);
+            // grw 04/05/2025 - instead just print comment directly 
+            fprintf (outfile, "; command line: ");
+            for (int i = 0; i < argc; i++) fprintf (outfile, "%s ", argv[i]);
+            fprintf (outfile, "\n");
+
+            if (channel_mask != 0xffff)
+               fprintf (outfile, "; Only the masked channels were processed: %04X\n", channel_mask);
+            if (keyshift != 0)
+               fprintf (outfile, "; Keyshift was %d chromatic notes\n", keyshift);
+            // grw 04/05/2025 - after header comments start byte data definition with lable
+            if (do_header) {       // write the initial the file header
+               fprintf (outfile, "\n; Playtune file header\npt_header:\n    db  'Pt', $06, $%02X, $%02X, ", file_header.f1, file_header.f2);
+               fflush (outfile);
+               file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
+               fprintf (outfile, "$%02X\n", file_header.num_tgens);
+               outfile_bytecount += 6; } 
+            fprintf(outfile, "\n%s:\n    db  ", filebasename); }
+           else {   
+         // grw 04/05/2025 - otherwise add C file information  
          fprintf (outfile, "// Playtune bytestream for file \"%s.mid\" ", filebasename);
          fprintf (outfile, "created by MIDITONES V%s on %s", VERSION,
-                  asctime (localtime (&rawtime)));
+                 asctime (localtime (&rawtime)));
          print_command_line (outfile, argc, argv);
          if (channel_mask != 0xffff)
             fprintf (outfile, "//   Only the masked channels were processed: %04X\n", channel_mask);
          if (keyshift != 0)
             fprintf (outfile, "//   Keyshift was %d chromatic notes\n", keyshift);
+
          if (define_progmem) {
             fprintf (outfile, "#ifdef __AVR__\n");
             fprintf (outfile, "#include <avr/pgmspace.h>\n");
@@ -1729,7 +1807,7 @@ int main (int argc, char *argv[]) {
             fflush (outfile);
             file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
             fprintf (outfile, "%2d, // (Playtune file header)\n", file_header.num_tgens);
-            outfile_bytecount += 6; } }
+            outfile_bytecount += 6; } } }
       else if (do_header) {     // write the binary file header
          int i;
          for (i = 0; i < sizeof (file_header); ++i)
@@ -1773,11 +1851,20 @@ int main (int argc, char *argv[]) {
 
       // generate the ending commentary
       if (!binaryoutput) {
+         // grw 04/05/2025  - add assembly output option 
+         if (asm_output) {
+            fprintf(outfile, "\n; This %ld byte score contains %d notes and uses %d tone generator%s\n",
+                   outfile_bytecount, note_on_commands, num_tonegens_used,
+                   num_tonegens_used == 1 ? "" : "s");
+            if (notes_skipped)
+               fprintf(outfile, "; %d notes had to be skipped\n", notes_skipped); }
+
+         else {
          fprintf(outfile, "\n// This %ld byte score contains %d notes and uses %d tone generator%s\n",
                  outfile_bytecount, note_on_commands, num_tonegens_used,
                  num_tonegens_used == 1 ? "" : "s");
          if (notes_skipped)
-            fprintf(outfile, "// %d notes had to be skipped\n", notes_skipped); }
+            fprintf(outfile, "// %d notes had to be skipped\n", notes_skipped); } }
       printf("  %s %d tone generators were used.\n",
              num_tonegens_used < num_tonegens ? "Only" : "All", num_tonegens_used);
       if (notes_skipped)
@@ -1811,6 +1898,9 @@ int main (int argc, char *argv[]) {
          else {
             if (binaryoutput)
                putc(num_tonegens_used, outfile);
+            // grw 04/05/2025  - add assembly output option    
+            else if (asm_output)
+               fprintf(outfile, "$%02X", num_tonegens_used);
             else
                fprintf(outfile, "%2d", num_tonegens_used); } }
       fclose(outfile); }

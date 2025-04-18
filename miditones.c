@@ -66,6 +66,7 @@
 
  MIDITONES may also prove useful for other simple music synthesizers. There are
  various forks of this code, and of the Playtune players, on Githib.
+  
 
  *** THE PROGRAM
 
@@ -106,8 +107,8 @@
   If the user specifies the full .mid filename, the .mid or .MID extension
   will be dropped and the remaining name will be used as <basefilename>.
 
-  The input file is <basefilename>.mid, and the output filename(s)
-  are the base file name with .c, .h, .bin, and/or .log extensions.
+  The input file is <basefilename>.mid, and the output filename(s) are
+  the base file name with .c, .h, .bin, .asm, .inc, and/or .log extensions.
 
 
   The following commonly-used command-line options can be specified:
@@ -124,7 +125,8 @@
         Playtune players that can check the header to know what data to expect.
 
   -b    Generate a binary file with the name <basefilename>.bin, instead of a
-        C-language source file with the name <basefilename>.c.
+        C-language source file with the name <basefilename>.c. This is useful
+        to create a file that can be input to Miditones_scroll.
 
   -t=n  Generate the bytestream so that at most "n" tone generators are used.
         The default is 6 tone generators, and the maximum is 16. The program
@@ -141,6 +143,9 @@
         decimal, "n" can be also specified in hex using a 0x prefix.
 
   -dp   Generate Arduino IDE-dependent C code that uses PROGMEM for the bytestream.
+
+  -asm1802  Generate assembler code for the Cosmac Elf 1802 microprocessor
+  -asm6502  Generate assembler code for the MOS technology 6502 microprocessor
 
   -k=n  Change the musical key of the output by n chromatic notes.
         -k=-12 goes one octave down, -k=12 goes one octave up, etc.
@@ -258,11 +263,11 @@
      Any subsequent header bytes included in the length are currently undefined
      and should be ignored by players.
 
-  Len Shustek, 2011 to 2021; see the change log.
+  Len Shustek, 2011 to 2025; see the change log.
 
 *----------------------------------------------------------------------------------------
 * The MIT License (MIT)
-* Copyright (c) 2011,2013,2015,2016,2019,2021 Len Shustek
+* Copyright (c) 2011,2013,2015,2016,2019,2021,2025 Len Shustek
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy
 * of this software and associated documentation files (the "Software"), to deal
@@ -394,10 +399,13 @@
        (Thanks to Jonathan Oakley for providing an example of the problem.)
       -But sometimes, to reduce the number of tone generators, it's helpful to eliminate
        identical notes. So add a -noduplicates option to do just that.
+10 April 2025, Len Shustek, V2.5
+      -Put the length of the song as a comment at the end of the generated source code.
+      -Add -asm1802 and -asm6502 options, adopting changes from GitHub user fourstix.
 
 future version ideas
 
-     -Perhaps elide "note off/note on" event sequences for the same note that
+      -Perhaps elide "note off/note on" event sequences for the same note that
       become adjacent because of -delaymin. Does that happen much, or at all?
 
      -Allow the flexibility to specify note timing on a track-by-track or
@@ -409,7 +417,7 @@ future version ideas
         channel 8 // organ
             options -attacktime=1000 -sustainlevel=80% -releasetime=100 -notemin=200
 */
-#define VERSION "2.4"
+#define VERSION "2.5"
 
 /*--------------------------------------------------------------------------------------------
 
@@ -601,7 +609,10 @@ struct track_header {
 
 bool loggen, logparse, parseonly, strategy1, strategy2, binaryoutput, define_progmem,
      volume_output, instrumentoutput, percussion_ignore, percussion_translate, do_header,
-     gen_restart, scorename, showskipped, noduplicates;
+     gen_restart, scorename, showskipped, noduplicates, asm_output;
+char *comment = "//";  // default start of comment
+char *hex = "0x";  // default start of hex constant
+char *byteop = "";  // what assembler psuedo-op indicates a byte constant
 FILE *infile, *outfile, *logfile;
 uint8_t *buffer, *hdrptr;
 unsigned long buflen;
@@ -708,7 +719,7 @@ void SayUsage(char *programName) {
       "",
       "Use:  miditones <options> <basefilename>",
       "   input file will be <basefilename>.mid",
-      "   output file will be <basefilename>.bin or .c or .h",
+      "   output file will be <basefilename>.bin, .c, .h, .asm, or .inc",
       "   log file will be <basefilename>.log",
       "",
       "Commonly-used options:",
@@ -733,6 +744,8 @@ void SayUsage(char *programName) {
       "  -r     terminate output file with \"restart\" instead of \"stop\" command",
       "  -s1    strategy 1: favor track 1",
       "  -s2    strategy 2: try to assign tracks to specific tone generators",
+      "  -asm1802          generate assembler code for the 1802 microprocessor",
+      "  -asm6502          generate assembler code for the 6502 microprocessor",
       "  -showskipped      display information about each note that had to be skipped",
       "  -noduplicates     remove identical notes playing on different channels",
       "  -delaymin=x       minimum delay is x msec, to save bytestream space",
@@ -771,6 +784,10 @@ int HandleOptions (int argc, char *argv[]) {
          else if (opt_key(arg, "pi")) percussion_ignore = true;
          else if (opt_key(arg, "pt")) percussion_translate = true;
          else if (opt_key(arg, "r")) gen_restart = true;
+         else if (opt_key(arg, "asm1802")) {
+            asm_output = true; comment = ";"; byteop = "    db  "; hex = "$"; outfile_maxitems = 16; }
+         else if (opt_key(arg, "asm6502")) {
+            asm_output = true; comment = ";"; byteop = "    .byte  "; hex = "$"; outfile_maxitems = 16; }
          else if (opt_int(arg, "delaymin", &tempint, 1, 1000)) delaymin_usec = tempint * 1000;
          else if (opt_int(arg, "releasetime", &tempint, 0, INT_MAX)) releasetime_usec = tempint * 1000;
          else if (opt_int(arg, "notemin", &tempint, 0, INT_MAX)) notemin_usec = tempint * 1000;
@@ -801,7 +818,7 @@ int HandleOptions (int argc, char *argv[]) {
    return firstnonoption; }
 
 void print_command_line (FILE *file, int argc, char *argv[]) {
-   fprintf (file, "// command line: ");
+   fprintf (file, "%s command line: ", comment);
    for (int i = 0; i < argc; i++) fprintf (file, "%s ", argv[i]);
    fprintf (file, "\n"); }
 
@@ -888,12 +905,15 @@ uint32_t rev_long (uint32_t val) {
 
 /* account for new items in the non-binary output file
 and generate a newline every so often. */
-void outfile_items (int n) {
+void outfile_items(int n) {
    outfile_bytecount += n;
    outfile_itemcount += n;
-   if (!binaryoutput && outfile_itemcount >= outfile_maxitems) {
-      fprintf (outfile, "\n");
-      outfile_itemcount = 0; } }
+   if (!binaryoutput) {
+      if (outfile_itemcount >= outfile_maxitems) {
+         if (asm_output) fprintf(outfile, "\n%s", byteop);
+         else fprintf(outfile, ",\n");
+         outfile_itemcount = 0; }
+      else fprintf(outfile, ", "); } }
 
 //******* structures for recording track, channel, and tone generator status
 
@@ -1076,8 +1096,13 @@ void remove_queue_entry(int ndx) { // remove the oldest queue entry
                   putc(CMD_INSTRUMENT | tgnum, outfile);
                   putc(tg->note.instrument, outfile);
                   outfile_bytecount += 2; }
+               else if (asm_output) {
+                  fprintf(outfile, "%s%02X", hex, CMD_INSTRUMENT | tgnum);
+                  outfile_items(1);
+                  fprintf(outfile, "%3d", tg->note.instrument);
+                  outfile_items(1); }
                else {
-                  fprintf(outfile, "0x%02X,%d, ", CMD_INSTRUMENT | tgnum, tg->note.instrument);
+                  fprintf(outfile, "0x%02X,%d", CMD_INSTRUMENT | tgnum, tg->note.instrument);
                   outfile_items(2); } } }
          if (loggen) fprintf(logfile, "      play tgen %d %s\n", tgnum, describe(&q->note));
          tg->playing = true;
@@ -1093,12 +1118,20 @@ void remove_queue_entry(int ndx) { // remove the oldest queue entry
             if (volume_output) {
                putc(tg->note.volume, outfile);
                outfile_bytecount +=1; } }
+         else if (asm_output) {
+            fprintf(outfile, "%s%02X", hex, CMD_PLAYNOTE | tgnum);
+            outfile_items(1);
+            fprintf(outfile, "%3d", tg->note.note);
+            outfile_items(1);
+            if (volume_output) {
+               fprintf(outfile, "%3d", tg->note.volume);
+               outfile_items(1); } }
          else {
             if (volume_output == 0) {
-               fprintf(outfile, "0x%02X,%d, ", CMD_PLAYNOTE | tgnum, tg->note.note);
+               fprintf(outfile, "0x%02X,%d", CMD_PLAYNOTE | tgnum, tg->note.note);
                outfile_items(2); }
             else {
-               fprintf(outfile, "0x%02X,%d,%d, ", CMD_PLAYNOTE | tgnum, tg->note.note, tg->note.volume);
+               fprintf(outfile, "0x%02X,%d,%d", CMD_PLAYNOTE | tgnum, tg->note.note, tg->note.volume);
                outfile_items(3); } } }
       else {
          if (loggen) fprintf(logfile, "  *** at %lu.%03lu msec no free generator; skipping %s\n",
@@ -1117,8 +1150,13 @@ void generate_delay(unsigned long delta_msec) { // output a delay command
          putc((byte)(delta_msec >> 8), outfile);
          putc((byte)(delta_msec & 0xff), outfile);
          outfile_bytecount += 2; }
+      else if (asm_output) {
+         fprintf(outfile, "%s%02X", hex, (byte)(delta_msec >> 8));
+         outfile_items(1);
+         fprintf(outfile, "%s%02X", hex, (byte)(delta_msec & 0xff));
+         outfile_items(1); }
       else {
-         fprintf(outfile, "%ld,%ld, ", delta_msec >> 8, delta_msec & 0xff);
+         fprintf(outfile, "%ld,%ld", delta_msec >> 8, delta_msec & 0xff);
          outfile_items(2); } } }
 
 // output all queue elements which are at the oldest time or at most "delaymin" later
@@ -1156,7 +1194,7 @@ void pull_queue(void) {
             putc(CMD_STOPNOTE | tgnum, outfile);
             outfile_bytecount += 1; }
          else {
-            fprintf(outfile, "0x%02X, ", CMD_STOPNOTE | tgnum);
+            fprintf(outfile, "%s%02X", hex, CMD_STOPNOTE | tgnum);
             outfile_items(1); }
          if (loggen) fprintf(logfile, "      stop tgen %d %s\n", tgnum, describe(&tg->note));
          tg->stopnote_pending = false;
@@ -1356,7 +1394,7 @@ void find_next_note (int tracknum) {
             tag = "copyright"; goto show_text;
          case 0x03:
             tag = "track name";
-            if (tracknum == 0 && !parseonly && !binaryoutput) {
+            if (tracknum == 0 && !parseonly && !binaryoutput && !asm_output) {
                /* Incredibly, MIDI has no standard for recording the name of the piece!
                   Track 0's "trackname" is often used for that so we output it to the C file as documentation. */
                fprintf (outfile, "// ");
@@ -1622,8 +1660,9 @@ void process_track_data(void) {
       putc(gen_restart ? CMD_RESTART : CMD_STOP, outfile);
       outfile_bytecount +=1; }
    else {
-      fprintf(outfile, "0x%02X};", gen_restart ? CMD_RESTART : CMD_STOP);
-      outfile_items(1);
+      fprintf(outfile, "%s%02X", hex, gen_restart ? CMD_RESTART : CMD_STOP);
+      ++outfile_bytecount;
+      if (!asm_output) fprintf(outfile, "};");
       fprintf(outfile, "\n"); } }
 
 
@@ -1647,7 +1686,7 @@ int main (int argc, char *argv[]) {
       SayUsage (argv[0]);
       exit (4); }
    filebasename = argv[argno];
-
+   
    // strip off trailing .mid or .MID extension if provided by user
    basenamelen = strlength(filebasename);
    if (basenamelen > 4 &&
@@ -1696,7 +1735,7 @@ int main (int argc, char *argv[]) {
          miditones_strlcat (filename, ".bin", MAXPATH);
          outfile = fopen (filename, "wb"); }
       else {
-         miditones_strlcat (filename,  scorename ? ".h" : ".c", MAXPATH);
+         miditones_strlcat (filename,  asm_output ? (scorename ? ".inc" : ".asm") : (scorename ? ".h" : ".c"), MAXPATH);
          outfile = fopen (filename, "w"); }
       if (!outfile) {
          fprintf (stderr, "Unable to open output file %s\n", filename);
@@ -1708,27 +1747,29 @@ int main (int argc, char *argv[]) {
       if (!binaryoutput) {      /* create header of C file that initializes score data */
          time_t rawtime;
          time (&rawtime);
-         fprintf (outfile, "// Playtune bytestream for file \"%s.mid\" ", filebasename);
+         fprintf (outfile, "%s Playtune bytestream for file \"%s.mid\" ", comment, filebasename);
          fprintf (outfile, "created by MIDITONES V%s on %s", VERSION,
                   asctime (localtime (&rawtime)));
          print_command_line (outfile, argc, argv);
          if (channel_mask != 0xffff)
-            fprintf (outfile, "//   Only the masked channels were processed: %04X\n", channel_mask);
+            fprintf (outfile, "%s   Only the masked channels were processed: %04X\n", comment, channel_mask);
          if (keyshift != 0)
-            fprintf (outfile, "//   Keyshift was %d chromatic notes\n", keyshift);
+            fprintf (outfile, "%s   Keyshift was %d chromatic notes\n", comment, keyshift);
          if (define_progmem) {
             fprintf (outfile, "#ifdef __AVR__\n");
             fprintf (outfile, "#include <avr/pgmspace.h>\n");
             fprintf (outfile, "#else\n");
             fprintf (outfile, "#define PROGMEM\n");
             fprintf (outfile, "#endif\n"); }
-         fprintf (outfile, "const unsigned char PROGMEM %s [] = {\n",
+         if (asm_output) // create the assembler label for the score
+            fprintf(outfile, "\n%s:\n%s", filebasename, byteop);
+         else fprintf (outfile, "const unsigned char PROGMEM %s [] = {\n",
                   scorename ? filebasename : "score");
-         if (do_header) {       // write the C initialization for the file header
-            fprintf (outfile, "'P','t', 6, 0x%02X, 0x%02X, ", file_header.f1, file_header.f2);
+         if (do_header) {       // write the initialization for the file header
+            fprintf (outfile, "'P','t', 6, %s%02X, %s%02X, ", hex, file_header.f1, hex, file_header.f2);
             fflush (outfile);
             file_header_num_tgens_position = ftell (outfile);   // remember where the number of tone generators is
-            fprintf (outfile, "%2d, // (Playtune file header)\n", file_header.num_tgens);
+            fprintf (outfile, "%2d%s %s (Playtune file header)\n%s", file_header.num_tgens, asm_output ? "" : ",", comment, byteop);
             outfile_bytecount += 6; } }
       else if (do_header) {     // write the binary file header
          int i;
@@ -1773,11 +1814,14 @@ int main (int argc, char *argv[]) {
 
       // generate the ending commentary
       if (!binaryoutput) {
-         fprintf(outfile, "\n// This %ld byte score contains %d notes and uses %d tone generator%s\n",
-                 outfile_bytecount, note_on_commands, num_tonegens_used,
+         fprintf(outfile, "\n%s This %ld byte score contains %d notes and uses %d tone generator%s.\n",
+                 comment, outfile_bytecount, note_on_commands, num_tonegens_used,
                  num_tonegens_used == 1 ? "" : "s");
+         fprintf(outfile, "%s It encodes %u.%03u seconds of music with %d tempo change%s.\n",
+            comment, (unsigned)(timenow_usec / 1000000), (unsigned)(timenow_usec / 1000 % 1000),
+            tempo_changes, tempo_changes == 1 ? "" : "s");
          if (notes_skipped)
-            fprintf(outfile, "// %d notes had to be skipped\n", notes_skipped); }
+            fprintf(outfile, "%s %d notes had to be skipped.\n", comment, notes_skipped); }
       printf("  %s %d tone generators were used.\n",
              num_tonegens_used < num_tonegens ? "Only" : "All", num_tonegens_used);
       if (notes_skipped)
@@ -1793,8 +1837,9 @@ int main (int argc, char *argv[]) {
                 "  (Consider recompiling with MAX_TRACKNOTES bigger than %d, to allow more simultaneous notes.)\n",
                 noteinfo_overflow, noteinfo_notfound, MAX_CHANNELNOTES);
       printf("  %ld bytes of score data were generated, ", outfile_bytecount);
-      printf("representing %u.%03u seconds of music with %d tempo changes\n",
-             (unsigned)(timenow_usec / 1000000), (unsigned)(timenow_usec / 1000 % 1000), tempo_changes);
+      printf("encoding %u.%03u seconds of music with %d tempo change%s.\n",
+             (unsigned)(timenow_usec / 1000000), (unsigned)(timenow_usec / 1000 % 1000), 
+             tempo_changes, tempo_changes == 1 ? "" : "s");
       if (delaymin_usec)
          printf("  %ld delays were removed because the minimum delay of  %u msec caused events to be merged\n",
                 delays_saved, (unsigned)(delaymin_usec / 1000));

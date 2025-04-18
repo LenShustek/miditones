@@ -64,7 +64,7 @@
 
  MIDITONES may also prove useful for other simple music synthesizers. There are
  various forks of this code, and of the Playtune players, on Githib.
-
+ 
  *** THE PROGRAM
 
   MIDITONES is written in standard ANSI C and is meant to be executed from the
@@ -104,8 +104,8 @@
   If the user specifies the full .mid filename, the .mid or .MID extension
   will be dropped and the remaining name will be used as <basefilename>.
 
-  The input file is <basefilename>.mid, and the output filename(s)
-  are the base file name with .c, .h, .bin, and/or .log extensions.
+    The input file is <basefilename>.mid, and the output filename(s) are
+  the base file name with .c, .h, .bin, .asm, .inc, and/or .log extensions.
 
 
   The following commonly-used command-line options can be specified:
@@ -122,7 +122,8 @@
         Playtune players that can check the header to know what data to expect.
 
   -b    Generate a binary file with the name <basefilename>.bin, instead of a
-        C-language source file with the name <basefilename>.c.
+        C-language source file with the name <basefilename>.c. This is useful
+        to create a file that can be input to Miditones_scroll.
 
   -t=n  Generate the bytestream so that at most "n" tone generators are used.
         The default is 6 tone generators, and the maximum is 16. The program
@@ -140,6 +141,9 @@
 
   -dp   Generate Arduino IDE-dependent C code that uses PROGMEM for the bytestream.
 
+  -asm1802  Generate assembler code for the Cosmac Elf 1802 microprocessor
+  -asm6502  Generate assembler code for the MOS technology 6502 microprocessor
+                                                                         
   -k=n  Change the musical key of the output by n chromatic notes.
         -k=-12 goes one octave down, -k=12 goes one octave up, etc.
 
@@ -256,4 +260,4 @@
      Any subsequent header bytes included in the length are currently undefined
      and should be ignored by players.
 
-  Len Shustek, 2011 to 2021; see the change log.
+  Len Shustek, 2011 to 2025; see the change log.
